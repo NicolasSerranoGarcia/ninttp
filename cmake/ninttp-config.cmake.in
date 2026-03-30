@@ -1,0 +1,39 @@
+# CMake package config file for ninttp library.
+#
+# The following target is imported:
+#
+#   ninttp::ninttp
+
+@PACKAGE_INIT@
+
+macro(import_targets type)
+    if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/ninttp-${type}-targets.cmake")
+        set(${CMAKE_FIND_PACKAGE_NAME}_NOT_FOUND_MESSAGE "ninttp ${type} libraries were requested but not found")
+        set(${CMAKE_FIND_PACKAGE_NAME}_FOUND OFF)
+        return()
+    endif()
+
+    include("${CMAKE_CURRENT_LIST_DIR}/ninttp-${type}-targets.cmake")
+endmacro()
+
+if(NOT TARGET ninttp::ninttp)
+    set(type "")
+
+    if(DEFINED MYLIB_SHARED_LIBS)
+        if(MYLIB_SHARED_LIBS)
+            set(type "shared")
+        else()
+            set(type "static")
+        endif()
+    elseif(BUILD_SHARED_LIBS AND EXISTS "${CMAKE_CURRENT_LIST_DIR}/ninttp-shared-targets.cmake")
+        set(type "shared")
+    elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/ninttp-static-targets.cmake")
+        set(type "static")
+    else()
+        set(type "shared")
+    endif()
+
+    import_targets(${type})
+    check_required_components(ninttp)
+    message("-- Found ${type} ninttp (version ${${CMAKE_FIND_PACKAGE_NAME}_VERSION})")
+endif()
