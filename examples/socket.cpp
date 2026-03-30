@@ -1,5 +1,5 @@
-#include "../include/ninttp/socket/client/client_socket.hpp"
-#include "../include/ninttp/socket/server/server_socket.hpp"
+#include "../include/ninttp/socket/client.hpp"
+#include "../include/ninttp/socket/server.hpp"
 
 int main(){
     ninttp::TcpV4ListenerSocket ls;
