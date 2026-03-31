@@ -364,6 +364,24 @@ namespace ninttp
 
             int nativeHandle() const noexcept{ return fdSocket_; };
 
+            int release() noexcept{
+                int prev = -1;
+                std::swap(fdSocket_, prev);
+                return prev;
+            }
+
+            //may throw when trying to close previous socket before adopting new one
+            void adopt(int handle){
+                try{
+                    close();
+                }catch(socketError& e){
+                    throw;
+                }
+
+                fdSocket_ = handle;
+
+            }
+
             //::shutdown can (and should) return ENOTCONN when this is of SocketBase type
             //bc SocketBase only gives basic common interface, but it is not usable.
             //This is why it doesn't make sense to call it from a SocketBase this
