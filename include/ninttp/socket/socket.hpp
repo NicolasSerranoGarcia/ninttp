@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <unistd.h>
 #include <cstring>
+#include <cerrno>
+#include <iostream>
 
 namespace ninttp
 {
@@ -101,9 +103,6 @@ namespace ninttp
             default: return Protocol::Invalid;
         }
     }
-
-    //for now most basic
-    struct socket_error{};
 
     inline std::string sockaddrToString(const sockaddr* address) noexcept{
         if (address == nullptr) {
@@ -233,36 +232,174 @@ namespace ninttp
     //TODO: semantics of sockets? one time use like std::thread but can be reused as a var?
     //can close connection any time?
 
-    //TODO: non visible? why should the user see this? only ClientSocket and ServerSocket
+    //If error is not 
+    struct socketError{
+        socketError(const char* context, int nativeErr) noexcept : context(context), nativeError_(nativeErr) {};
+
+        std::string msg() const noexcept{
+            //this is going to fail bc of the ()
+            return context + strerror(nativeError_);
+        }
+
+        std::string context;
+        int nativeError_;
+    };
+
+    enum PolicyErrCode{
+        UNKNOWN,
+        UNRECOGNIZED_DOMAIN,
+        UNRECOGNIZED_SERVICE,
+        UNRECOGNIZED_PROTOCOL,
+        UNRECOGNIZED_SHUTDOWN_POLICY
+    };
+
+    inline std::string strFromPolicyError(int pErr) noexcept{
+        switch(pErr){
+            case UNRECOGNIZED_DOMAIN:
+                return "unrecognized domain";
+            case UNRECOGNIZED_SERVICE:
+                return "unrecognized service";
+            case UNRECOGNIZED_PROTOCOL:
+                return "unrecognized protocol";
+            case UNRECOGNIZED_SHUTDOWN_POLICY:
+                return "unrecognized socket shutdown policy";
+            default:
+                return "unknown policy error";
+        }
+    }
+
+    enum class ShutdownPolicy{
+        SHUT_RECEPTIONS,
+        SHUT_TRANSMISSIONS,
+        SHUT_TRANSMISIONS_AND_RECEPTIONS
+    };
+
+    int toNativeShutdownPolicy(ShutdownPolicy what){
+        switch(what){
+            case ShutdownPolicy::SHUT_RECEPTIONS:
+                return SHUT_RD;
+            case ShutdownPolicy::SHUT_TRANSMISSIONS:
+                return SHUT_WR;
+            case ShutdownPolicy::SHUT_TRANSMISIONS_AND_RECEPTIONS:
+                return SHUT_RDWR;
+            default:
+                return -1;
+        }
+    }
+
+    struct PolicyError{
+        PolicyError(const char* context, int policyErr) noexcept : context(context), policyError_(policyErr) {};
+
+        std::string msg() const noexcept{
+            return context + strFromPolicyError(policyError_);
+        }
+
+        std::string context;
+        int policyError_;
+    };
+
     class SocketBase{
         public:
-            SocketBase() noexcept{};
+            SocketBase() noexcept : domain_(Domain::Invalid), service_(Service::Invalid), protocol_(Protocol::Invalid), fdSocket_(-1) {};
+
             SocketBase(Domain domain, Service service, Protocol protocol)
                 : domain_(domain), service_(service), protocol_(protocol), fdSocket_(-1){
-                    const int nativeDomain = toNative(domain_);
-                    const int nativeService = toNative(service_);
-                    const int nativeProtocol = toNative(protocol_);
+                const int nativeDomain = toNative(domain_);
+                const int nativeService = toNative(service_);
+                const int nativeProtocol = toNative(protocol_);
 
-                    if (nativeDomain < 0 || nativeService < 0 || nativeProtocol < 0) {
-                        throw socket_error{};
-                    }
-
-                    fdSocket_ = ::socket(nativeDomain, nativeService, nativeProtocol);
-
-                    //TODO: maybe report from last error?
-                    if(fdSocket_ == -1){
-                        throw socket_error{};
-                    }
+                if (nativeDomain < 0){
+                    throw PolicyError{"SocketBase(Domain, Service, Protocol): ", UNRECOGNIZED_DOMAIN};
                 }
-            SocketBase(int nativeDomain, int nativeService, int nativeProtocol)
-            : SocketBase(toDomain(nativeDomain), toService(nativeService), toProtocol(nativeProtocol)){};
 
-            virtual ~SocketBase(){
-                if(!close()){
-                    //check EBADF sockfd is not a valid file descriptor.
-                    // EINVAL An invalid value was specified in how (but see BUGS).
-                    // ENOTCONN The specified socket is not connected.
-                    // ENOTSOCK The file descriptor sockfd does not refer to a socket.
+                if (nativeService < 0){
+                    throw PolicyError{"SocketBase(Domain, Service, Protocol): ", UNRECOGNIZED_SERVICE};
+                }
+
+                if (nativeProtocol < 0){
+                    throw PolicyError{"SocketBase(Domain, Service, Protocol): ", UNRECOGNIZED_PROTOCOL};
+                }
+
+                fdSocket_ = ::socket(nativeDomain, nativeService, nativeProtocol);
+
+                if(fdSocket_ == -1){
+                    throw socketError{"SocketBase(Domain, Service, Protocol): ", errno};
+                }
+            }
+
+            SocketBase(int nativeDomain, int nativeService, int nativeProtocol)
+                : SocketBase(toDomain(nativeDomain), toService(nativeService), toProtocol(nativeProtocol)){};
+
+
+            SocketBase(const SocketBase&) = delete;
+            SocketBase& operator=(const SocketBase&) = delete;
+
+            SocketBase(SocketBase&& other) noexcept 
+                : domain_(std::move(other.domain_)), service_(std::move(other.service_)), protocol_(std::move(other.protocol_)), fdSocket_(std::move(other.fdSocket_)){
+                other.domain_ = Domain::Invalid;
+                other.fdSocket_ = -1;
+                other.protocol_ = Protocol::Invalid;
+                other.service_ = Service::Invalid;
+            }
+
+            SocketBase& operator=(SocketBase&& other) noexcept{
+                SocketBase(std::move(other)).swap(*this);
+                return *this;
+            }
+
+            bool isOpen() const noexcept{ return fdSocket_ != -1; }
+
+            void swap(SocketBase& other) noexcept{
+                std::swap(domain_, other.domain_);
+                std::swap(service_, other.service_);
+                std::swap(protocol_, other.protocol_);
+                std::swap(fdSocket_, other.fdSocket_);
+            }
+
+            Domain domain() const noexcept{ return domain_; };
+
+            Service service() const noexcept{ return service_; };
+
+            Protocol protocol() const noexcept{ return protocol_; };
+
+            int nativeHandle() const noexcept{ return fdSocket_; };
+
+            //::shutdown can (and should) return ENOTCONN when this is of SocketBase type
+            //bc SocketBase only gives basic common interface, but it is not usable.
+            //This is why it doesn't make sense to call it from a SocketBase this
+            void shutdown(ShutdownPolicy what) const{
+                auto native = toNativeShutdownPolicy(what);
+                if(native == -1){
+                    throw PolicyError("shutdown(ShutdownPolicy): ", UNRECOGNIZED_SHUTDOWN_POLICY);
+                }
+
+                if(::shutdown(fdSocket_, native) == -1){
+                    throw socketError("shutdown(ShutdownPolicy): ", errno);
+                }
+            }
+
+            //explicit cleanup, better for handling than the destructor
+            void close(){
+                //already closed
+                if(fdSocket_ == -1){
+                    return;
+                }
+
+                auto closed = ::close(fdSocket_) == 0;
+
+                if(closed){
+                    fdSocket_ = -1;
+                    return;
+                }
+
+                throw socketError("close(): ", errno);
+            }
+
+            virtual ~SocketBase() noexcept{
+                try{
+                    close();
+                } catch(socketError& e){
+                    std::cerr << e.msg() << std::endl;
                 }
             };
 
@@ -271,25 +408,6 @@ namespace ninttp
             Service service_;
             Protocol protocol_;
             int fdSocket_;
-
-        private:
-            //TODO: make this public for reuse of the instance?
-            //what about shutdown? 
-            bool close(){
-                //already closed
-                if(fdSocket_ == -1){
-                    return true;
-                }
-
-                auto closed = ::close(fdSocket_) == 0;
-
-                if(closed){
-                    fdSocket_ = -1;
-                    return true;
-                }
-
-                return false;
-            }
     };
 
     template <typename AddressT>
