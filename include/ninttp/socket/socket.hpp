@@ -298,7 +298,11 @@ namespace ninttp
             ServerSocket(Domain domain, Service service, Protocol protocol)
                 : SocketBase(domain, service, protocol){}
 
-            virtual bool bind(const AddressT& address, const Port& port) = 0;
+            struct bindResult{
+                
+            };
+
+            virtual bindResult bind(const AddressT& address, const Port& port) = 0;
     };
 
     template <typename AddressT>

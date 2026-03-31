@@ -16,9 +16,14 @@ namespace ninttp
         public:
             TcpV4StreamSocket() : SocketBase(Domain::IPv4, Service::Stream, Protocol::Tcp){};
 
+            Port getPeerPort() const noexcept{ return peerPort_; };
+
+            v4Addr getPeerAddress() const noexcept{ return peerAddr_; };
+
         private:
-            v4Addr peer_;
+            v4Addr peerAddr_;
             Port peerPort_;
+
         friend class TcpV4ListenerSocket;
     };
 
@@ -26,8 +31,11 @@ namespace ninttp
         public:
             TcpV6StreamSocket() : SocketBase(Domain::IPv6, Service::Stream, Protocol::Tcp){};
 
+            Port getPeerPort() const noexcept{ return peerPort_; };
+
+            v6Addr getPeerAddress() const noexcept{ return peerAddr_; };
         private:
-            v6Addr peer_;
+            v6Addr peerAddr_;
             Port peerPort_;
         friend class TcpV6ListenerSocket;
     };
@@ -36,17 +44,21 @@ namespace ninttp
         public:
             TcpV4ListenerSocket()
                 : ServerSocket<v4Addr>(Domain::IPv4, Service::Stream, Protocol::Tcp){}
+
             //should be called once
-            bool bind(const v4Addr& address, const Port& port) override {
+            bindResult bind(const v4Addr& address, const Port& port) override {
                 struct sockaddr_in sock;
                 memset(&sock, 0, sizeof(sock));
                 sock.sin_addr.s_addr = inet_addr(address.c_str());
                 sock.sin_port = htons(port);
                 sock.sin_family = toNative(domain_);
 
-                return ::bind(fdSocket_, (struct sockaddr*)&sock,
-                    static_cast<socklen_t>(sizeof(sock))) != -1;
+                ::bind(fdSocket_, (struct sockaddr*)&sock,
+                    static_cast<socklen_t>(sizeof(sock)));
+
+                return {};
             }
+
             //should be called once
             bool listen(const int n) override {
                 backlog_ = n;
@@ -61,7 +73,7 @@ namespace ninttp
                     //TODO: manage
                     throw socket_error{};
                 }
-                ss.peer_ = sockaddrToString((struct sockaddr*)&cli);
+                ss.peerAddr_ = sockaddrToString((struct sockaddr*)&cli);
                 ss.peerPort_ = cli.sin_port;
                 return ss;
             }
@@ -71,15 +83,17 @@ namespace ninttp
         public:
             TcpV6ListenerSocket()
                 : ServerSocket<v6Addr>(Domain::IPv6, Service::Stream, Protocol::Tcp){}
-            bool bind(const v6Addr& address, const Port& port) override {
+            bindResult bind(const v6Addr& address, const Port& port) override {
                 struct sockaddr_in6 sock;
                 memset(&sock, 0, sizeof(sock));
                 sock.sin6_addr = address;
                 sock.sin6_port = htons(port);
                 sock.sin6_family = toNative(domain_);
 
-                return ::bind(fdSocket_, (struct sockaddr*)&sock,
-                    static_cast<socklen_t>(sizeof(sock))) != -1;
+                ::bind(fdSocket_, (struct sockaddr*)&sock,
+                    static_cast<socklen_t>(sizeof(sock)));
+
+                return {};
             }
             bool listen(const int n) override {
                 backlog_ = n;
@@ -94,7 +108,7 @@ namespace ninttp
                     //TODO: manage
                     throw socket_error{};
                 }
-                ss.peer_ = sockaddrToString((struct sockaddr*)&cli);
+                ss.peerAddr_ = sockaddrToString((struct sockaddr*)&cli);
                 ss.peerPort_ = cli.sin6_port;
                 //TODO: maybe the connection carries more info for ipv6
                 return ss;
@@ -105,15 +119,17 @@ namespace ninttp
         public:
             UdpV4ServerSocket()
                 : ServerSocket<v4Addr>(Domain::IPv4, Service::Datagram, Protocol::Udp){}
-            bool bind(const v4Addr& address, const Port& port) override {
+            bindResult bind(const v4Addr& address, const Port& port) override {
                 struct sockaddr_in sock;
                 memset(&sock, 0, sizeof(sock));
                 sock.sin_addr.s_addr = inet_addr(address.c_str());
                 sock.sin_port = htons(port);
                 sock.sin_family = toNative(domain_);
 
-                return ::bind(fdSocket_, (struct sockaddr*)&sock,
-                    static_cast<socklen_t>(sizeof(sock))) != -1;
+                ::bind(fdSocket_, (struct sockaddr*)&sock,
+                    static_cast<socklen_t>(sizeof(sock)));
+
+                return {};
             }
     };
 
@@ -121,15 +137,17 @@ namespace ninttp
         public:
             UdpV6ServerSocket()
                 : ServerSocket<v6Addr>(Domain::IPv6, Service::Datagram, Protocol::Udp){}
-            bool bind(const v6Addr& address, const Port& port) override {
+            bindResult bind(const v6Addr& address, const Port& port) override {
                 struct sockaddr_in6 sock;
                 memset(&sock, 0, sizeof(sock));
                 sock.sin6_addr = address;
                 sock.sin6_port = htons(port);
                 sock.sin6_family = toNative(domain_);
 
-                return ::bind(fdSocket_, (struct sockaddr*)&sock,
-                    static_cast<socklen_t>(sizeof(sock))) != -1;
+                ::bind(fdSocket_, (struct sockaddr*)&sock,
+                    static_cast<socklen_t>(sizeof(sock)));
+
+                return {};
             }
     };
 }
