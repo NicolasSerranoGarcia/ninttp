@@ -6,7 +6,7 @@ This means we should prioritize a clean TCP server API and defer Unix-socket “
 
 ## Project structure needs
 
-- [ ] Setup CMake and a folder structure that supports future changes
+- [X] Setup CMake and a folder structure that supports future changes
 - [ ] Setup TODO as github projects and milestones
 
 ## Must-have for HTTP/1.0 MVP
@@ -74,7 +74,7 @@ This means we should prioritize a clean TCP server API and defer Unix-socket “
 
 ## Milestones
 
-### Milestone A — “Can serve simple HTTP/1.0”
+### Milestone A - Can serve simple HTTP/1.0
 
 - [ ] Bind/listen/accept works.
 - [ ] `recv` request bytes.
@@ -82,14 +82,14 @@ This means we should prioritize a clean TCP server API and defer Unix-socket “
 - [ ] Graceful close/shutdown.
 - [ ] Basic reusable bind (`SO_REUSEADDR`).
 
-### Milestone B — “Can handle real traffic patterns”
+### Milestone B - Can handle real traffic patterns
 
 - [ ] Better error reporting.
 - [ ] Resolver-based bind/connect.
 - [ ] Non-blocking + `poll` support.
 - [ ] Optional tuning options (timeouts, nodelay, reuseport).
 
-### Milestone C — “Scale/feature extensions (only if needed)”
+### Milestone C - Scale/feature extensions (only if needed)
 
 - [ ] `epoll` backend.
 - [ ] Extra socket families/protocols.
