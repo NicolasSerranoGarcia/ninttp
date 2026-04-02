@@ -18,10 +18,23 @@
 #include <string>
 #include <array>
 #include <algorithm>
+#include <type_traits>
 #include <unistd.h>
 #include <cstring>
 #include <cerrno>
 #include <iostream>
+
+#include "interfaces.hpp"
+
+//move some things here
+#include "types.hpp"
+
+//current TODO: move things to different headers. Inspect and re-build the Ipv4 endpoint to understand how it works.
+//Add concepts and implement IEndpoint class. Document methods. Go through socketBase and StreamSocket and look for TODOs
+//strengthen the interface with more detailed errors:
+#include <source_location>
+//
+//add c++ semantics
 
 namespace ninttp
 {
@@ -138,101 +151,11 @@ namespace ninttp
         }
     }
 
-    //supports compressed IPv6 text through inet_pton
-    struct v6Addr{
-        std::array<uint16_t, 8> hextet{};
-
-        constexpr bool empty() const noexcept
-        {
-            for (const uint16_t value : hextet) {
-                if (value != 0) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        constexpr v6Addr() = default;
-
-        constexpr v6Addr(const std::array<uint16_t, 8>& value) noexcept
-            : hextet(value){}
-
-        v6Addr(const in6_addr& value) noexcept
-        {
-            for (std::size_t i = 0; i < hextet.size(); ++i) {
-                const uint16_t native = static_cast<uint16_t>(
-                    (static_cast<uint16_t>(value.s6_addr[i * 2]) << 8) |
-                    static_cast<uint16_t>(value.s6_addr[i * 2 + 1])
-                );
-
-                hextet[i] = ntohs(native);
-            }
-        }
-
-        v6Addr(const std::string& value) noexcept
-        {
-            in6_addr native{};
-            if (::inet_pton(AF_INET6, value.c_str(), &native) == 1) {
-                *this = v6Addr(native);
-            }
-        }
-
-        v6Addr(const char* value) noexcept
-        {
-            if (value == nullptr) {
-                return;
-            }
-
-            in6_addr native{};
-            if (::inet_pton(AF_INET6, value, &native) == 1) {
-                *this = v6Addr(native);
-            }
-        }
-
-        operator std::array<uint16_t, 8>() const noexcept
-        {
-            return hextet;
-        }
-
-        operator in6_addr() const noexcept
-        {
-            in6_addr value{};
-
-            for (std::size_t i = 0; i < hextet.size(); ++i) {
-                const uint16_t network = htons(hextet[i]);
-                value.s6_addr[i * 2] = static_cast<uint8_t>((network >> 8) & 0xFF);
-                value.s6_addr[i * 2 + 1] = static_cast<uint8_t>(network & 0xFF);
-            }
-
-            return value;
-        }
-    };
-
-    using v4Addr = std::string;
-
-    inline constexpr const char* v4Addr_any = "0.0.0.0";
-    inline constexpr const char* v4Addr_loopback = "172.0.0.1";
-    inline constexpr v6Addr v6Addr_any{std::array<uint16_t, 8>{0, 0, 0, 0, 0, 0, 0, 0}};
-    inline constexpr v6Addr v6Addr_loopback{std::array<uint16_t, 8>{0, 0, 0, 0, 0, 0, 0, 1}};
-
-    //TODO: Port = whatever is used for Port on the platform
-    //e.g on unix the type of the port passed to the functions, but windows may vary
-    using Port = unsigned short;
-
-    class IListener{
-        public:
-            virtual ~IListener() = default;
-            virtual bool listen(const int n) = 0;
-
-        protected:
-            int backlog_ = 0;
-    };
-
     //TODO: semantics of sockets? one time use like std::thread but can be reused as a var?
     //can close connection any time?
 
-    //If error is not 
+    //.msg() can be verbose,so most of the times, if you want to handle the error, you may want to consult the nativeError_ code
+    //which on unix platforms comes from errno, and handle each individually
     struct socketError{
         socketError(const char* context, int nativeErr) noexcept : context(context), nativeError_(nativeErr) {};
 
@@ -271,7 +194,7 @@ namespace ninttp
     enum class ShutdownPolicy{
         SHUT_RECEPTIONS,
         SHUT_TRANSMISSIONS,
-        SHUT_TRANSMISIONS_AND_RECEPTIONS
+        SHUT_TRANSMISSIONS_AND_RECEPTIONS
     };
 
     int toNativeShutdownPolicy(ShutdownPolicy what){
@@ -280,7 +203,7 @@ namespace ninttp
                 return SHUT_RD;
             case ShutdownPolicy::SHUT_TRANSMISSIONS:
                 return SHUT_WR;
-            case ShutdownPolicy::SHUT_TRANSMISIONS_AND_RECEPTIONS:
+            case ShutdownPolicy::SHUT_TRANSMISSIONS_AND_RECEPTIONS:
                 return SHUT_RDWR;
             default:
                 return -1;
@@ -330,7 +253,6 @@ namespace ninttp
             SocketBase(int nativeDomain, int nativeService, int nativeProtocol)
                 : SocketBase(toDomain(nativeDomain), toService(nativeService), toProtocol(nativeProtocol)){};
 
-
             SocketBase(const SocketBase&) = delete;
             SocketBase& operator=(const SocketBase&) = delete;
 
@@ -370,29 +292,17 @@ namespace ninttp
                 return prev;
             }
 
-            //may throw when trying to close previous socket before adopting new one
-            void adopt(int handle){
-                try{
-                    close();
-                }catch(socketError& e){
-                    throw;
-                }
-
-                fdSocket_ = handle;
-
-            }
-
             //::shutdown can (and should) return ENOTCONN when this is of SocketBase type
             //bc SocketBase only gives basic common interface, but it is not usable.
             //This is why it doesn't make sense to call it from a SocketBase this
             void shutdown(ShutdownPolicy what) const{
                 auto native = toNativeShutdownPolicy(what);
                 if(native == -1){
-                    throw PolicyError("shutdown(ShutdownPolicy): ", UNRECOGNIZED_SHUTDOWN_POLICY);
+                    throw PolicyError("SocketBase::shutdown(ShutdownPolicy): ", UNRECOGNIZED_SHUTDOWN_POLICY);
                 }
 
                 if(::shutdown(fdSocket_, native) == -1){
-                    throw socketError("shutdown(ShutdownPolicy): ", errno);
+                    throw socketError("SocketBase::shutdown(ShutdownPolicy): ", errno);
                 }
             }
 
@@ -410,7 +320,7 @@ namespace ninttp
                     return;
                 }
 
-                throw socketError("close(): ", errno);
+                throw socketError("SocketBase::close(): ", errno);
             }
 
             virtual ~SocketBase() noexcept{
@@ -426,30 +336,132 @@ namespace ninttp
             Service service_;
             Protocol protocol_;
             int fdSocket_;
+
+            //constructor for children classes that avoids creating a new socket
+            SocketBase(int fd, Domain domain, Service service, Protocol protocol) noexcept 
+                : domain_(domain), service_(service), protocol_(protocol), fdSocket_(fd){}
     };
 
-    template <typename AddressT>
-    class ServerSocket : public SocketBase{
-        public:
-            ServerSocket(Domain domain, Service service, Protocol protocol)
-                : SocketBase(domain, service, protocol){}
+    //Endpoint interface recap. must be convertible to sockaddr*, must have a .size()
+    //must be constructible from the info that ::accept() returns
 
-            struct bindResult{
-                
+    //ConnectedSocketT recap. must be constructible from what ::accept() returns overall
+
+    //enforce this not on the created endpoint classes but rather on the callee with concepts?
+
+    template <typename EndpointT, typename ConnectedSocketT>
+    class ListenerSocket : public SocketBase, public IBindable<EndpointT>, public IListener<ConnectedSocketT>{
+        public:
+            ListenerSocket(Domain domain, Protocol protocol)
+                : SocketBase(domain, Service::Stream, protocol){}
+
+            //bind a specific interface of the server interface to this socket
+            //Endpoint must be convertible to sockaddr* and we must be able to take it's size
+            //enforce that with a concept? in the Java way
+            void bind(const EndpointT& endpoint) override {
+                if(::bind(fdSocket_, endpoint, endpoint.size()) != 0)
+                    throw socketError("ListenerSocket::bind(const EndpointT&): ", errno);
+            }
+
+            void listen(const int n) override{
+                if(::listen(fdSocket_, this->backlog_ = n) != 0)
+                    throw socketError("ListenerSocket::listen(const int): ", errno);
             };
 
-            virtual bindResult bind(const AddressT& address, const Port& port) = 0;
+            //delegate on the constructor of ConnectedSocketT what ::accept() returns
+            ConnectedSocketT accept() override{
+                //pass in sockaddr_storage
+                struct sockaddr_storage cli{};
+                socklen_t cli_len = static_cast<socklen_t>(sizeof(cli));
+                auto fd = ::accept(fdSocket_, (struct sockaddr*)&cli, &cli_len);
+                if(fd == -1){
+                    throw socketError{"ListenerSocket::accept(): ", errno};
+                }
+
+                //all connected sockets must have this method (mainly stream sockets and seqpacket sockets)
+                return ConnectedSocketT::fromAccepted(fd, this->domain_, this->protocol_, cli);
+            };
     };
 
-    template <typename AddressT>
-    class ClientSocket : public SocketBase{
+    template <typename EndpointT>
+    class StreamSocket : public SocketBase, public IConnectable<EndpointT>, public IStreamIO{
         public:
-            ClientSocket(Domain domain, Service service, Protocol protocol)
-                : SocketBase(domain, service, protocol){}
-            //TODO: asume for now client only calls connect once, 
-            //so no need t close a previous connection if there was
-            //also return bool for now
-            virtual bool connect(const AddressT& address, const Port& port) = 0;
+
+            //when building it from scratch, this ctor then connect
+            StreamSocket(Domain domain, Protocol protocol) : SocketBase(domain, Service::Stream, protocol){};
+
+            static StreamSocket fromAccepted(
+                int fd,
+                Domain domain,
+                Protocol protocol,
+                const sockaddr_storage& peerStorage)
+            {
+                return StreamSocket(fd, domain, protocol, EndpointT(peerStorage));
+            }
+
+            //connect enforces the notion that an endpoint must be convertible to sockaddr*
+            void connect(const EndpointT& endpoint) override{
+                if(::connect(fdSocket_, endpoint_ = endpoint, endpoint.size()) != 0)
+                    throw socketError("StreamSocket::connect(const EndpointT&): ", errno);
+            }
+
+            //create second connect method that takes an rvalue so that std::move() would avoid a copy
+
+            //send len bytes from buffer to endpoint. Return the number of bytes sent or throw socketError on error
+            size_t send(const char* buffer, size_t len) override{
+                if(buffer == nullptr) return 0;
+
+                if(auto sent = ::send(fdSocket_, buffer, len, 0); sent != -1){
+                    return sent;
+                }
+
+                throw socketError{"StreamSocket::send(...): ", errno};
+            };
+
+            size_t receive(char* buffer, size_t n) override{
+                if(buffer == nullptr) return 0;
+
+                if(auto recv = ::recv(fdSocket_, buffer, n, 0); recv != -1){
+                    return recv;
+                }
+
+                throw socketError{"StreamSocket::receive(...): ", errno};
+            };
+
+        private:
+            EndpointT endpoint_;
+
+            StreamSocket(int fd, Domain domain, Protocol protocol, const EndpointT& endpoint)
+                : SocketBase(fd, domain, Service::Stream, protocol), endpoint_(endpoint){};
     };
 
+    //this is the client 
+    // template <typename SendEndpointT, typename RecvEndpointT>
+    // class DatagramSocket : public SocketBase, public IDatagramIO<SendEndpointT, RecvEndpointT>{
+    //     public:
+
+    //         DatagramSocket(){}
+
+    //         ssize_t sendTo(const SendEndpointT& endpoint, const char* buffer, size_t len) override{
+    //             if(buffer == nullptr) return 0;
+
+    //             //endpoint is implicitly casted
+    //             if(auto recv = ::sendto(fdSocket_, buffer, len, 0, endpoint, endpoint.size()); recv != -1){
+    //                 return recv;
+    //             }
+
+    //             throw socketError{"StreamSocket::receive(...): ", errno};
+    //         };
+
+    //         ssize_t recvFrom(char* buffer, size_t len) override{
+    //             // if(buffer == nullptr) return 0;
+
+    //             // //endpoint is implicitly casted
+    //             // if(auto recv = ::recvfrom(fdSocket_, buffer, len, 0, endpoint, endpoint.size()); recv != -1){
+    //             //     return recv;
+    //             // }
+
+    //             // throw socketError{"StreamSocket::receive(...): ", errno};
+    //         };
+    // };
 } // namespace ninttp

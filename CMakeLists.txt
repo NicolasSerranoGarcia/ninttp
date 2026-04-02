@@ -40,9 +40,9 @@ SET_IF_UNDEFINED(ninttp_INSTALL_CMAKEDIR
 # declaring a variable makes the code reusable for later
 set(public_headers
     include/ninttp/ninttp.hpp
+    include/ninttp/socket/interfaces.hpp
+    include/ninttp/socket/endpoints.hpp
     include/ninttp/socket/socket.hpp
-    include/ninttp/socket/client.hpp
-    include/ninttp/socket/server.hpp
 )
 
 # groups have to match the location in which they are
