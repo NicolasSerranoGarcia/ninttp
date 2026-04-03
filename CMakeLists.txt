@@ -123,11 +123,11 @@ endif()
 
 # TEST AND EXAMPLES
 
-if(ninttp_BUILD_TESTS)
+if(NINTTP_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-if(ninttp_BUILD_EXAMPLES)
+if(NINTTP_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
