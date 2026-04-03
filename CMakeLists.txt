@@ -76,7 +76,7 @@ target_include_directories(ninttp
 # That way, consumers automatically inherit the correct language level
 target_compile_features(ninttp
     INTERFACE
-        cxx_std_17
+        cxx_std_20
 )
 
 # INSTALL TARGET - haven't gotten into depth with this part. I view it as kind of a default boilerplate
