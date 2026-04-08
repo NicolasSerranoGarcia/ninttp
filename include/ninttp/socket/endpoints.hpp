@@ -8,6 +8,13 @@
 #include <arpa/inet.h>
 #include <stdexcept>
 
+#include "../ninendian.hpp"
+//                                                                                                           0x0  0x1  0x2  0x3
+//Network order is Big endian. This means that MSB is stored on lowest address. 0x12345678 would be saved as 12   34   56   78
+//Little endian means 0x12345678 is stored as                                                                78   56   34   12
+
+//abstract rule of thumb: Big endian is natural read order. Little endian is inverse read order (bytes, though, not bit by bit)
+
 namespace ninttp
 {
     //Endpoint interface recap. must be convertible to sockaddr*, must have a .size()
@@ -94,6 +101,12 @@ namespace ninttp
         }
     };
 
+    //methods that take in addresses from unix and stuff do not have their parameters endian-checked.
+    //this must have an internal invariant that it always saves the internal address state as either big endian, or host order, or network order...
+    //and methods should not change that
+    //right now this is highly coupled to Unix. For now just leave it like that
+    //this class (and all endpoints) should ALWAYS take any user-supplied parameter as host order, and store it as native. Returns are then of host and network types
+    //Constructors and setters ALWAYS take host order parameters
     class Ipv4Endpoint{
         public:
 
@@ -101,29 +114,31 @@ namespace ninttp
                 native_.sin_family = AF_INET;
             };
 
-            Ipv4Endpoint(const in_addr& addr, uint16_t port) noexcept : Ipv4Endpoint(){
-                setAddress(addr);
-                setPort(port);
+            //takes in hostOrder
+            constexpr Ipv4Endpoint(const in_addr& addr, uint16_t port) noexcept : Ipv4Endpoint(){
+                setAddressHostOrder(addr);
+                setPortHostOrder(port);
             }
 
             constexpr Ipv4Endpoint(uint32_t hostOrderAddress, uint16_t port) noexcept
                 : native_{}
             {
                 native_.sin_family = AF_INET;
-                native_.sin_addr.s_addr = hostToNetwork32_(hostOrderAddress);
-                native_.sin_port = hostToNetwork16_(port);
+                native_.sin_addr.s_addr = hostToNetwork32(hostOrderAddress);
+                native_.sin_port = hostToNetwork16(port);
             }
 
             Ipv4Endpoint(const char* textAddress, uint16_t port) : Ipv4Endpoint(){
                 setAddress(textAddress);
-                setPort(port);
+                setPortHostOrder(port);
             }
 
             Ipv4Endpoint(const std::string& textAddress, uint16_t port) : Ipv4Endpoint(){
                 setAddress(textAddress);
-                setPort(port);
+                setPortHostOrder(port);
             }
 
+            //e.g: a = 127, b = 0, c = 0, d = 1 would be loopback
             static constexpr Ipv4Endpoint fromOctets(
                 uint8_t a,
                 uint8_t b,
@@ -134,6 +149,7 @@ namespace ninttp
                 return Ipv4Endpoint(hostOrderFromOctets_(a, b, c, d), port);
             }
 
+            //all of the endpoints should have this
             Ipv4Endpoint(const sockaddr_storage& addr){
                 if(addr.ss_family != AF_INET){
                     throw std::runtime_error("Invalid sockaddr_storage");
@@ -142,7 +158,7 @@ namespace ninttp
                 native_ = reinterpret_cast<const sockaddr_in&>(addr);
             }
 
-            sockaddr_in toSockaddr() noexcept{
+            constexpr sockaddr_in toSockaddr() noexcept{
                 return native_;
             }
 
@@ -154,12 +170,20 @@ namespace ninttp
                 return reinterpret_cast<const sockaddr*>(&native_);
             }
 
-            void setAddress(const in_addr& addr) noexcept{
+            constexpr void setAddressHostOrder(const in_addr& addr) noexcept{
+                native_.sin_addr.s_addr = hostToNetwork32(addr.s_addr);
+            }
+
+            constexpr void setAddressHostOrder(uint32_t addr) noexcept{
+                native_.sin_addr.s_addr = hostToNetwork32(addr);
+            }
+
+            constexpr void setAddressNetworkOrder(const in_addr& addr) noexcept{
                 native_.sin_addr = addr;
             }
 
-            void setAddress(uint32_t hostOrderAddress) noexcept{
-                native_.sin_addr.s_addr = htonl(hostOrderAddress);
+            constexpr void setAddressNetworkOrder(uint32_t addr) noexcept{
+                native_.sin_addr.s_addr = addr;
             }
 
             void setAddress(const char* textAddress){
@@ -172,12 +196,20 @@ namespace ninttp
                 setAddress(textAddress.c_str());
             }
 
-            in_addr addressInAddr() const noexcept{
+            constexpr in_addr addressHostInAddr() const noexcept{
+                return in_addr{ .s_addr = networkToHost32(native_.sin_addr.s_addr) };
+            }
+
+            constexpr in_addr addressNetworkInAddr() const noexcept{
                 return native_.sin_addr;
             }
 
-            uint32_t addressHostOrder() const noexcept{
-                return ntohl(native_.sin_addr.s_addr);
+            constexpr uint32_t addressNetworkOrder() const noexcept{
+                return native_.sin_addr.s_addr;
+            }
+
+            constexpr uint32_t addressHostOrder() const noexcept{
+                return networkToHost32(native_.sin_addr.s_addr);
             }
 
             std::string addressString() const{
@@ -189,26 +221,33 @@ namespace ninttp
                 return std::string(buf);
             }
 
-            void setPort(uint16_t port) noexcept{
-                native_.sin_port = htons(port);
+            //takes in the port with host order format
+            constexpr void setPortHostOrder(uint16_t port) noexcept{
+                native_.sin_port = hostToNetwork16(port);
             }
 
-            void setPortNetworkOrder(uint16_t portNetworkOrder) noexcept{
-                native_.sin_port = portNetworkOrder;
+            //takes in the port with network order format
+            constexpr void setPortNetworkOrder(uint16_t port) noexcept{
+                native_.sin_port = port;
             }
 
-            uint16_t port() const noexcept{
-                return ntohs(native_.sin_port);
+            //returns the port in host order format
+            constexpr uint16_t portHostOrder() const noexcept{
+                return networkToHost16(native_.sin_port);
             }
 
-            uint16_t portNetworkOrder() const noexcept{
+            //returns port in network order format (big endian)
+            constexpr uint16_t portNetworkOrder() const noexcept{
                 return native_.sin_port;
             }
 
-            size_t size() const noexcept{
+            //all endpoints must have this method
+            //we might want to create a separate size bc this is not the intended result
+            constexpr size_t size() const noexcept{
                 return sizeof(sockaddr_in);
             };
 
+            //throws so can't constexpr until c++26
             static Ipv4Endpoint fromSockAddr(const sockaddr_storage* addr){
                 if(addr->ss_family != AF_INET){
                     throw std::runtime_error("Invalid sockaddr_storage");
@@ -223,27 +262,8 @@ namespace ninttp
             }
 
         private:
-            mutable sockaddr_in native_{};
-
-            static constexpr uint16_t hostToNetwork16_(uint16_t value) noexcept{
-                #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-                                return static_cast<uint16_t>((value >> 8) | (value << 8));
-                #else
-                                return value;
-                #endif
-            }
-
-            static constexpr uint32_t hostToNetwork32_(uint32_t value) noexcept{
-                #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-                                return ((value & 0x000000FFu) << 24) |
-                                    ((value & 0x0000FF00u) << 8)  |
-                                    ((value & 0x00FF0000u) >> 8)  |
-                                    ((value & 0xFF000000u) >> 24);
-                #else
-                                return value;
-                #endif
-            }
-
+            //this is always stored in network order
+            sockaddr_in native_{};
             
             static constexpr uint32_t hostOrderFromOctets_(
                 uint8_t a,
@@ -260,6 +280,4 @@ namespace ninttp
 
     inline constexpr Ipv4Endpoint v4Addr_any = Ipv4Endpoint::fromOctets(0, 0, 0, 0, 0);
     inline constexpr Ipv4Endpoint v4Addr_loopback = Ipv4Endpoint::fromOctets(127, 0, 0, 1, 0);
-    // inline constexpr Ipv6Endpoint v6Addr_any{std::array<uint16_t, 8>{0, 0, 0, 0, 0, 0, 0, 0}};
-    // inline constexpr Ipv6Endpoint v6Addr_loopback{std::array<uint16_t, 8>{0, 0, 0, 0, 0, 0, 0, 1}};
 } // namespace ninttp

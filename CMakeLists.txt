@@ -37,10 +37,12 @@ SET_IF_UNDEFINED(ninttp_INSTALL_CMAKEDIR
 
 # LIBRARY HEADERS
 
-# declaring a variable makes the code reusable for later
 set(public_headers
     include/ninttp/ninttp.hpp
     include/ninttp/socket/interfaces.hpp
+    include/ninttp/socket/errors.hpp
+    include/ninttp/socket/types.hpp
+    include/ninttp/socket/ninendian.hpp
     include/ninttp/socket/endpoints.hpp
     include/ninttp/socket/socket.hpp
 )
