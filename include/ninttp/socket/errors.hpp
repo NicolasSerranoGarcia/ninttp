@@ -9,6 +9,8 @@
  * 
  */
 
+ //missing TODO's: add the native error code on the errors, and a getter or simply public. No significant changes to the API whatsoever
+
 #pragma once
 
 #include <string>
