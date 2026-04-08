@@ -22,6 +22,7 @@
 #include <cstring>
 #include <cerrno>
 #include <iostream>
+#include <utility>
 
 #include "interfaces.hpp"
 #include "types.hpp"
@@ -41,7 +42,7 @@ namespace ninttp
 
     class SocketBase{
         public:
-            SocketBase() noexcept 
+            constexpr SocketBase() noexcept 
                 : domain_(Domain::Invalid), service_(Service::Invalid), protocol_(Protocol::Invalid), fdSocket_(-1) {};
 
             SocketBase(Domain domain, Service service, Protocol protocol = Protocol::Default)
@@ -89,24 +90,26 @@ namespace ninttp
                 return *this;
             }
 
-            bool isOpen() const noexcept{ return fdSocket_ != -1; }
+            constexpr bool isOpen() const noexcept{ return fdSocket_ != -1; }
 
-            void swap(SocketBase& other) noexcept{
+            //std::swap is constexpr since c++20
+            //swap operations on fundamental types and enums is noexcept
+            constexpr void swap(SocketBase& other) noexcept{
                 std::swap(domain_, other.domain_);
                 std::swap(service_, other.service_);
                 std::swap(protocol_, other.protocol_);
                 std::swap(fdSocket_, other.fdSocket_);
             }
 
-            Domain domain() const noexcept{ return domain_; };
+            constexpr Domain domain() const noexcept{ return domain_; };
 
-            Service service() const noexcept{ return service_; };
+            constexpr Service service() const noexcept{ return service_; };
 
-            Protocol protocol() const noexcept{ return protocol_; };
+            constexpr Protocol protocol() const noexcept{ return protocol_; };
 
-            int nativeHandle() const noexcept{ return fdSocket_; };
+            constexpr int nativeHandle() const noexcept{ return fdSocket_; };
 
-            int release() noexcept{
+            [[nodiscard]] constexpr int release() noexcept{
                 int prev = -1;
                 std::swap(fdSocket_, prev);
                 return prev;
@@ -127,6 +130,7 @@ namespace ninttp
             }
 
             //explicit cleanup, better for handling than the destructor
+            //invalidates the instance. 
             void close(){
                 //already closed
                 if(fdSocket_ == -1){
@@ -135,6 +139,9 @@ namespace ninttp
 
                 if(::close(fdSocket_) == 0){
                     fdSocket_ = -1;
+                    domain_ = Domain::Invalid;
+                    protocol_ = Protocol::Invalid;
+                    service_ = Service::Invalid;
                     return;
                 }
 
@@ -156,7 +163,7 @@ namespace ninttp
             int fdSocket_;
 
             //constructor for children classes that avoids creating a new socket
-            SocketBase(int fd, Domain domain, Service service, Protocol protocol) noexcept 
+            constexpr SocketBase(int fd, Domain domain, Service service, Protocol protocol) noexcept 
                 : domain_(domain), service_(service), protocol_(protocol), fdSocket_(fd){}
     };
 
@@ -167,6 +174,10 @@ namespace ninttp
 
     //enforce this not on the created endpoint classes but rather on the callee with concepts?
 
+    //concept connectedSocket inherits from socketBase, because if not, if accept() return gets ignored, then the file descriptor that could potentially carry
+    //will get leaked. If we ensure it inherits from SOcketBase, then the file descriptor would be (potentially) free'd in the destructor. Note that still, 
+    //the destructor can fail, but that is a user problem because it didn't manage the return of accept(). How about we do accept nodiscard? I don't think it is a good
+    //idea, maybe leave it as a flag. EndpointT should also inherit from IEndpoint
     template <typename EndpointT, typename ConnectedSocketT>
     class ListenerSocket : public SocketBase, public IBindable<EndpointT>, public IListener<ConnectedSocketT>{
         public:
