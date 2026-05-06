@@ -137,12 +137,12 @@ namespace ninttp
             using SocketBase::service;
             using SocketBase::shutdown;
 
-            static StreamSocket fromAccepted(
+            static std::expected<StreamSocket, socketError> fromAccepted(
                 typename internal::SelectedBackend::SocketT sock,
                 Domain domain,
                 Service service,
                 Protocol proto,
-                const typename internal::SelectedBackend::AddressStorageT& peerStorage)
+                const typename internal::SelectedBackend::AddressStorageT& peerStorage) noexcept
             {
                 return StreamSocket(sock, domain, service, proto, EndpointT::fromStorage(peerStorage));
             }

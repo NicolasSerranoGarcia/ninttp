@@ -68,7 +68,7 @@ namespace ninttp::internal
             SocketCore& operator=(const SocketCore&) = delete;
 
             SocketCore(SocketCore&& other) noexcept(std::is_nothrow_move_constructible_v<SocketT>)
-                : domain_(std::move(other.domain_)), service_(std::move(other.service_)), proto_(std::move(other.proto_)), handle_(std::move(other.handle_))
+                : handle_(std::move(other.handle_)), domain_(std::move(other.domain_)), service_(std::move(other.service_)), proto_(std::move(other.proto_))
             {
                 other.invalidate_();
             }

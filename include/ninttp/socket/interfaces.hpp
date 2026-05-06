@@ -15,7 +15,6 @@ namespace ninttp
     };
 
     template <class DerivedT, typename EndpointT>
-        requires hasBindableImpl<DerivedT, EndpointT>
     class Bindable{
         public:
             std::expected<void, socketError> bind(const EndpointT& endpoint){
@@ -31,7 +30,6 @@ namespace ninttp
     };
 
     template <class DerivedT, typename ConnectedSocketT>
-        requires hasListenerImpl<DerivedT, ConnectedSocketT>
     class Listener{
         public:
             std::expected<void, socketError> listen(const int n){
@@ -53,7 +51,6 @@ namespace ninttp
     };
 
     template <class DerivedT, typename EndpointT>
-        requires hasConnectableImpl<DerivedT, EndpointT>
     class Connectable{
         public:
             std::expected<void, socketError> connect(const EndpointT& address){
@@ -69,7 +66,6 @@ namespace ninttp
     
     //has IO stream capabilities
     template <class DerivedT>
-        requires hasIOStreamImpl<DerivedT>
     class IOStream{
         public:
             std::expected<size_t, socketError> send(const char* buffer, size_t len){
@@ -93,7 +89,6 @@ namespace ninttp
     };
 
     template <class DerivedT, typename SendEndpointT, typename RecvEndpointT>
-        requires hasIODatagramImpl<DerivedT, SendEndpointT, RecvEndpointT>
     class IODatagram{
         public:
             size_t sendTo(const SendEndpointT& endpoint, const char* buf, size_t len){
