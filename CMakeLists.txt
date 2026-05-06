@@ -19,6 +19,7 @@ string(COMPARE EQUAL
 # BUILD OPTIONS
 
 include(cmake/utils.cmake)
+include(CheckIncludeFileCXX)
 
 # This is an internal CMake module (GNUInstallDirs.cmake) that unifies the paths for installation.
 # It defines valuable variables such as CMAKE_INSTALL_INCLUDEDIR, CMAKE_INSTALL_LIBDIR, etc.
@@ -35,16 +36,76 @@ SET_IF_UNDEFINED(ninttp_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/ninttp-${PROJECT_VERSION}" CACHE STRING
     "Install path for ninttp package-related CMake files")
 
+# PLATFORM/BACKEND DETECTION
+
+check_include_file_cxx("winsock2.h" NINTTP_HAS_WINSOCK2_H)
+check_include_file_cxx("ws2tcpip.h" NINTTP_HAS_WS2TCPIP_H)
+check_include_file_cxx("sys/socket.h" NINTTP_HAS_SYS_SOCKET_H)
+check_include_file_cxx("netinet/in.h" NINTTP_HAS_NETINET_IN_H)
+check_include_file_cxx("arpa/inet.h" NINTTP_HAS_ARPA_INET_H)
+check_include_file_cxx("unistd.h" NINTTP_HAS_UNISTD_H)
+
+set(NINTTP_CONFIG_PLATFORM_WINDOWS 0)
+set(NINTTP_CONFIG_PLATFORM_UNIX 0)
+set(NINTTP_CONFIG_PLATFORM_UNKNOWN 0)
+set(NINTTP_CONFIG_PLATFORM_LINUX 0)
+set(NINTTP_CONFIG_PLATFORM_APPLE 0)
+set(NINTTP_CONFIG_PLATFORM_ANDROID 0)
+set(NINTTP_CONFIG_PLATFORM_BSD 0)
+
+set(NINTTP_CONFIG_BACKEND_WINSOCK 0)
+set(NINTTP_CONFIG_BACKEND_POSIX 0)
+set(NINTTP_CONFIG_SOCKET_BACKEND_REQUIRES_INIT 0)
+set(NINTTP_CONFIG_SOCKET_INVALID_HANDLE_ALL_BITS_ONE 0)
+set(NINTTP_CONFIG_SOCKET_INVALID_HANDLE_MINUS_ONE 0)
+
+if(WIN32 AND NINTTP_HAS_WINSOCK2_H)
+    set(NINTTP_CONFIG_PLATFORM_WINDOWS 1)
+    set(NINTTP_CONFIG_BACKEND_WINSOCK 1)
+    set(NINTTP_CONFIG_SOCKET_BACKEND_REQUIRES_INIT 1)
+    set(NINTTP_CONFIG_SOCKET_INVALID_HANDLE_ALL_BITS_ONE 1)
+elseif(NINTTP_HAS_SYS_SOCKET_H AND NINTTP_HAS_NETINET_IN_H AND NINTTP_HAS_UNISTD_H)
+    set(NINTTP_CONFIG_PLATFORM_UNIX 1)
+    set(NINTTP_CONFIG_BACKEND_POSIX 1)
+    set(NINTTP_CONFIG_SOCKET_BACKEND_REQUIRES_INIT 0)
+    set(NINTTP_CONFIG_SOCKET_INVALID_HANDLE_MINUS_ONE 1)
+else()
+    set(NINTTP_CONFIG_PLATFORM_UNKNOWN 1)
+    message(FATAL_ERROR "Could not detect a supported socket backend. Required: Winsock headers on Windows or POSIX socket headers on Unix-like systems.")
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(NINTTP_CONFIG_PLATFORM_LINUX 1)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(NINTTP_CONFIG_PLATFORM_APPLE 1)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(NINTTP_CONFIG_PLATFORM_ANDROID 1)
+elseif(CMAKE_SYSTEM_NAME MATCHES "FreeBSD|NetBSD|OpenBSD|DragonFly")
+    set(NINTTP_CONFIG_PLATFORM_BSD 1)
+endif()
+
+set(ninttp_generated_include_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+file(MAKE_DIRECTORY "${ninttp_generated_include_dir}/ninttp")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ninttp-platform-config.hpp.in"
+    "${ninttp_generated_include_dir}/ninttp/ninttp_platform_config.hpp"
+    @ONLY
+)
+
 # LIBRARY HEADERS
 
 set(public_headers
-    include/ninttp/ninttp.hpp
+    include/ninttp/nintraits.hpp
     include/ninttp/socket/interfaces.hpp
-    include/ninttp/socket/errors.hpp
+    include/ninttp/socket/socket_error.hpp
     include/ninttp/socket/types.hpp
-    include/ninttp/socket/ninendian.hpp
     include/ninttp/socket/endpoints.hpp
     include/ninttp/socket/socket.hpp
+    include/ninttp/socket/internal/select_backend.hpp
+    include/ninttp/socket/internal/socket_core.hpp
+    include/ninttp/socket/internal/backends/concepts.hpp
+    include/ninttp/socket/internal/backends/posix.hpp
+    include/ninttp/socket/internal/backends/winsock.hpp
 )
 
 # groups have to match the location in which they are
@@ -71,6 +132,7 @@ include(CMakePackageConfigHelpers)
 target_include_directories(ninttp
     INTERFACE
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+    "$<BUILD_INTERFACE:${ninttp_generated_include_dir}>"
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 )
 
@@ -78,7 +140,7 @@ target_include_directories(ninttp
 # That way, consumers automatically inherit the correct language level
 target_compile_features(ninttp
     INTERFACE
-        cxx_std_20
+        cxx_std_23
 )
 
 # INSTALL TARGET - haven't gotten into depth with this part. I view it as kind of a default boilerplate
@@ -105,6 +167,11 @@ if(ninttp_INSTALL)
     # This is simpler than using PUBLIC_HEADER target properties.
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    )
+
+    install(FILES
+        "${ninttp_generated_include_dir}/ninttp/ninttp_platform_config.hpp"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ninttp"
     )
 
     set(targets_file "ninttp-targets.cmake")

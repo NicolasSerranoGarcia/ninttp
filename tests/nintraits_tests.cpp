@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <iostream>
 
-#include <ninttp/ninendian.hpp>
+#include <ninttp/nintraits.hpp>
 
 namespace {
 

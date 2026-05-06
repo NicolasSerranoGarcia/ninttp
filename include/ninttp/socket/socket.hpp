@@ -1,296 +1,232 @@
 #pragma once
 
-//TODO: organize on different folders (e.g server/, client/) etc...
-//TODO: v6 version also support multicast, flow info..., so
-//those versions might carry more atributes 
-//TODO: if IPV6_V6ONLY is on, then v6 server sockets can still manage v4 requests
-//in future manage that. For now, only v4 -> v4 and v6 -> v6
-//TODO: what about collisions? if the user creates multiple 
-//server listeners on the same interface
+#include <concepts>
+#include <expected>
 
-//TODO: add lots of c++ semantics and idioms
-
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-
-#include <string>
-#include <array>
-#include <algorithm>
-#include <type_traits>
-#include <unistd.h>
-#include <cstring>
-#include <cerrno>
-#include <iostream>
-#include <utility>
-
+#include "internal/select_backend.hpp"
+#include "internal/socket_core.hpp"
 #include "interfaces.hpp"
 #include "types.hpp"
-#include "errors.hpp"
 
-//current TODO: move things to different headers. Inspect and re-build the Ipv4 endpoint to understand how it works.
-//Add concepts and implement IEndpoint class. Document methods. Go through socketBase and StreamSocket and look for TODOs
-//strengthen the interface with more detailed errors:
-//
-//add c++ semantics
+#include "socket_error.hpp"
+
 
 namespace ninttp
 {
+    using SocketBase = ninttp::internal::SocketCore<internal::SelectedBackend>;
 
-    //TODO: semantics of sockets? one time use like std::thread but can be reused as a var?
-    //can close connection any time?
-
-    class SocketBase{
-        public:
-            constexpr SocketBase() noexcept 
-                : domain_(Domain::Invalid), service_(Service::Invalid), protocol_(Protocol::Invalid), fdSocket_(-1) {};
-
-            SocketBase(Domain domain, Service service, Protocol protocol = Protocol::Default)
-                : domain_(domain), service_(service), protocol_(protocol), fdSocket_(-1)
-            {
-                const int nativeDomain = toNative(domain_);
-                const int nativeService = toNative(service_);
-                const int nativeProtocol = toNative(protocol_);
-
-                if (nativeDomain < 0){
-                    throw PolicyError{PolicyErrCode::UNRECOGNIZED_DOMAIN};
-                }
-
-                if (nativeService < 0){
-                    throw PolicyError{PolicyErrCode::UNRECOGNIZED_SERVICE};
-                }
-
-                if (nativeProtocol < 0){
-                    throw PolicyError{PolicyErrCode::UNRECOGNIZED_PROTOCOL};
-                }
-
-                fdSocket_ = ::socket(nativeDomain, nativeService, nativeProtocol);
-
-                if(fdSocket_ == -1){
-                    throw socketError{strerror(errno)};
-                }
-            }
-
-            SocketBase(int nativeDomain, int nativeService, int nativeProtocol)
-                : SocketBase(toDomain(nativeDomain), toService(nativeService), toProtocol(nativeProtocol)){};
-
-            SocketBase(const SocketBase&) = delete;
-            SocketBase& operator=(const SocketBase&) = delete;
-
-            SocketBase(SocketBase&& other) noexcept 
-                : domain_(std::move(other.domain_)), service_(std::move(other.service_)), protocol_(std::move(other.protocol_)), fdSocket_(std::move(other.fdSocket_)){
-                other.domain_ = Domain::Invalid;
-                other.fdSocket_ = -1;
-                other.protocol_ = Protocol::Invalid;
-                other.service_ = Service::Invalid;
-            }
-
-            SocketBase& operator=(SocketBase&& other) noexcept{
-                SocketBase(std::move(other)).swap(*this);
-                return *this;
-            }
-
-            constexpr bool isOpen() const noexcept{ return fdSocket_ != -1; }
-
-            //std::swap is constexpr since c++20
-            //swap operations on fundamental types and enums is noexcept
-            constexpr void swap(SocketBase& other) noexcept{
-                std::swap(domain_, other.domain_);
-                std::swap(service_, other.service_);
-                std::swap(protocol_, other.protocol_);
-                std::swap(fdSocket_, other.fdSocket_);
-            }
-
-            constexpr Domain domain() const noexcept{ return domain_; };
-
-            constexpr Service service() const noexcept{ return service_; };
-
-            constexpr Protocol protocol() const noexcept{ return protocol_; };
-
-            constexpr int nativeHandle() const noexcept{ return fdSocket_; };
-
-            [[nodiscard]] constexpr int release() noexcept{
-                int prev = -1;
-                std::swap(fdSocket_, prev);
-                return prev;
-            }
-
-            //::shutdown can (and should) return ENOTCONN when this is of SocketBase type
-            //bc SocketBase only gives basic common interface, but it is not usable.
-            //This is why it doesn't make sense to call it from a SocketBase this
-            void shutdown(ShutdownPolicy what) const{
-                auto native = toNativeShutdownPolicy(what);
-                if(native == -1){
-                    throw PolicyError(PolicyErrCode::UNRECOGNIZED_SHUTDOWN_POLICY);
-                }
-
-                if(::shutdown(fdSocket_, native) == -1){
-                    throw socketError(strerror(errno));
-                }
-            }
-
-            //explicit cleanup, better for handling than the destructor
-            //invalidates the instance. 
-            void close(){
-                //already closed
-                if(fdSocket_ == -1){
-                    return;
-                }
-
-                if(::close(fdSocket_) == 0){
-                    fdSocket_ = -1;
-                    domain_ = Domain::Invalid;
-                    protocol_ = Protocol::Invalid;
-                    service_ = Service::Invalid;
-                    return;
-                }
-
-                throw socketError(strerror(errno));
-            }
-
-            virtual ~SocketBase() noexcept{
-                try{
-                    close();
-                } catch(socketError& e){
-                    std::cerr << e.msg() << std::endl;
-                }
-            };
-
-        protected:
-            Domain domain_;
-            Service service_;
-            Protocol protocol_;
-            int fdSocket_;
-
-            //constructor for children classes that avoids creating a new socket
-            constexpr SocketBase(int fd, Domain domain, Service service, Protocol protocol) noexcept 
-                : domain_(domain), service_(service), protocol_(protocol), fdSocket_(fd){}
+    template<typename ConnectedSocketT>
+    concept ConnectedSocketFromAccepted = requires(
+        typename internal::SelectedBackend::SocketT sock,
+        Domain domain,
+        Service service,
+        Protocol proto,
+        const typename internal::SelectedBackend::AddressStorageT& storage) {
+        { ConnectedSocketT::fromAccepted(sock, domain, service, proto, storage) } noexcept
+            -> std::convertible_to<std::expected<ConnectedSocketT, socketError>>;
     };
 
-    //Endpoint interface recap. must be convertible to sockaddr*, must have a .size()
-    //must be constructible from the info that ::accept() returns
-
-    //ConnectedSocketT recap. must be constructible from what ::accept() returns overall
-
-    //enforce this not on the created endpoint classes but rather on the callee with concepts?
-
-    //concept connectedSocket inherits from socketBase, because if not, if accept() return gets ignored, then the file descriptor that could potentially carry
-    //will get leaked. If we ensure it inherits from SOcketBase, then the file descriptor would be (potentially) free'd in the destructor. Note that still, 
-    //the destructor can fail, but that is a user problem because it didn't manage the return of accept(). How about we do accept nodiscard? I don't think it is a good
-    //idea, maybe leave it as a flag. EndpointT should also inherit from IEndpoint
-    template <typename EndpointT, typename ConnectedSocketT>
-    class ListenerSocket : public SocketBase, public IBindable<EndpointT>, public IListener<ConnectedSocketT>{
-        public:
-            ListenerSocket(Domain domain, Protocol protocol)
-                : SocketBase(domain, Service::Stream, protocol){}
-
-            //bind a specific interface of the server interface to this socket
-            //Endpoint must be convertible to sockaddr* and we must be able to take it's size
-            //enforce that with a concept? in the Java way
-            void bind(const EndpointT& endpoint) override {
-                if(::bind(fdSocket_, endpoint, endpoint.size()) != 0)
-                    throw socketError(strerror(errno));
-            }
-
-            void listen(const int n) override{
-                if(::listen(fdSocket_, this->backlog_ = n) != 0)
-                    throw socketError(strerror(errno));
-            };
-
-            //delegate on the constructor of ConnectedSocketT what ::accept() returns
-            ConnectedSocketT accept() override{
-                //pass in sockaddr_storage
-                struct sockaddr_storage cli{};
-                socklen_t cli_len = static_cast<socklen_t>(sizeof(cli));
-                auto fd = ::accept(fdSocket_, (struct sockaddr*)&cli, &cli_len);
-                if(fd == -1){
-                    throw socketError{strerror(errno)};
-                }
-
-                //all connected sockets must have this method (mainly stream sockets and seqpacket sockets)
-                return ConnectedSocketT::fromAccepted(fd, this->domain_, this->protocol_, cli);
-            };
+    template<typename EndpointT>
+    concept EndpointFromStorage = requires(
+        const typename internal::SelectedBackend::AddressStorageT& storage) {
+        { EndpointT::fromStorage(storage) } -> std::convertible_to<EndpointT>;
     };
 
-    template <typename EndpointT>
-    class StreamSocket : public SocketBase, public IConnectable<EndpointT>, public IStreamIO{
+    template<typename EndpointT>
+    concept EndpointToStorage = requires(const EndpointT& endpoint) {
+        { endpoint.toStorage() } -> std::convertible_to<typename internal::SelectedBackend::AddressStorageT>;
+        { endpoint.storageLen() } -> std::convertible_to<typename internal::SelectedBackend::AddressLenT>;
+    };
+
+    //connected socket needs a concept to check that it can be built fromAccepted (static method with the same signature)
+    //EndpointT needs the signature ::fromStorage(const AddressStorageT& storage)
+    //it also needs a toStorage and storageLen methods for being able to pass to the backend
+    template<typename EndpointT, typename ConnectedSocketT>
+        requires ConnectedSocketFromAccepted<ConnectedSocketT> && EndpointToStorage<EndpointT>
+    class ListenerSocket : protected SocketBase,
+                            public Bindable<ListenerSocket<EndpointT, ConnectedSocketT>, EndpointT>,
+                            public Listener<ListenerSocket<EndpointT, ConnectedSocketT>, ConnectedSocketT>{
         public:
+            //we should forward the methods that we do want to use from SocketBase, like getters, release...
+            ListenerSocket(Domain domain, Protocol proto)
+                : SocketBase(domain, Service::Stream, proto){}
 
-            //when building it from scratch, this ctor then connect
-            StreamSocket(Domain domain, Protocol protocol) : SocketBase(domain, Service::Stream, protocol){};
+            using SocketBase::close;
+            using SocketBase::domain;
+            using SocketBase::isOpen;
+            using SocketBase::isUsable;
+            using SocketBase::isValid;
+            using SocketBase::nativeHandle;
+            using SocketBase::protocol;
+            using SocketBase::release;
+            using SocketBase::service;
+            using SocketBase::shutdown;
 
-            static StreamSocket fromAccepted(
-                int fd,
-                Domain domain,
-                Protocol protocol,
-                const sockaddr_storage& peerStorage)
-            {
-                return StreamSocket(fd, domain, protocol, EndpointT(peerStorage));
+            std::expected<void, socketError> bind(const EndpointT& endpoint) noexcept{
+                return bindImpl(endpoint);
             }
 
-            //connect enforces the notion that an endpoint must be convertible to sockaddr*
-            void connect(const EndpointT& endpoint) override{
-                if(::connect(fdSocket_, endpoint_ = endpoint, endpoint.size()) != 0)
-                    throw socketError(strerror(errno));
+            std::expected<void, socketError> listen(int backlog) noexcept{
+                return listenImpl(backlog);
             }
 
-            //create second connect method that takes an rvalue so that std::move() would avoid a copy
-
-            //send len bytes from buffer to endpoint. Return the number of bytes sent or throw socketError on error
-            size_t send(const char* buffer, size_t len) override{
-                if(buffer == nullptr) return 0;
-
-                if(auto sent = ::send(fdSocket_, buffer, len, 0); sent != -1){
-                    return sent;
-                }
-
-                throw socketError{strerror(errno)};
-            };
-
-            size_t receive(char* buffer, size_t n) override{
-                if(buffer == nullptr) return 0;
-
-                if(auto recv = ::recv(fdSocket_, buffer, n, 0); recv != -1){
-                    return recv;
-                }
-
-                throw socketError{strerror(errno)};
-            };
+            std::expected<ConnectedSocketT, socketError> accept() noexcept{
+                return acceptImpl();
+            }
 
         private:
-            EndpointT endpoint_;
+            template <class, typename>
+            friend class Bindable;
 
-            StreamSocket(int fd, Domain domain, Protocol protocol, const EndpointT& endpoint)
-                : SocketBase(fd, domain, Service::Stream, protocol), endpoint_(endpoint){};
+            template <class, typename>
+            friend class Listener;
+
+            std::expected<void, socketError> bindImpl(const EndpointT& endpoint) noexcept{
+                using AddressLenT = typename internal::SelectedBackend::AddressLenT;
+
+                auto storage = endpoint.toStorage();
+                auto len = static_cast<AddressLenT>(endpoint.storageLen());
+
+                if(!internal::SelectedBackend::bind(handle_, &storage, len)) {
+                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                }
+
+                return {};
+            }
+
+            std::expected<void, socketError> listenImpl(int backlog) noexcept{
+                if(!internal::SelectedBackend::listen(handle_, backlog)) {
+                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                }
+
+                return {};
+            }
+
+            std::expected<ConnectedSocketT, socketError> acceptImpl() noexcept{
+                auto accepted = internal::SelectedBackend::accept(handle_);
+                if(!accepted.has_value()) {
+                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                }
+
+                return ConnectedSocketT::fromAccepted(
+                    accepted->socket,
+                    domain_,
+                    service_,
+                    proto_,
+                    accepted->storage);
+            }
     };
 
-    //this is the client 
-    // template <typename SendEndpointT, typename RecvEndpointT>
-    // class DatagramSocket : public SocketBase, public IDatagramIO<SendEndpointT, RecvEndpointT>{
-    //     public:
+    template<typename EndpointT>
+        requires EndpointFromStorage<EndpointT> && EndpointToStorage<EndpointT>
+    class StreamSocket : protected SocketBase,
+                         public Connectable<StreamSocket<EndpointT>, EndpointT>,
+                         public IOStream<StreamSocket<EndpointT>>{
+        public:
+            StreamSocket(Domain domain, Protocol proto)
+                : SocketBase(domain, Service::Stream, proto){}
 
-    //         DatagramSocket(){}
+            using SocketBase::close;
+            using SocketBase::domain;
+            using SocketBase::isOpen;
+            using SocketBase::isUsable;
+            using SocketBase::isValid;
+            using SocketBase::nativeHandle;
+            using SocketBase::protocol;
+            using SocketBase::release;
+            using SocketBase::service;
+            using SocketBase::shutdown;
 
-    //         ssize_t sendTo(const SendEndpointT& endpoint, const char* buffer, size_t len) override{
-    //             if(buffer == nullptr) return 0;
+            static StreamSocket fromAccepted(
+                typename internal::SelectedBackend::SocketT sock,
+                Domain domain,
+                Service service,
+                Protocol proto,
+                const typename internal::SelectedBackend::AddressStorageT& peerStorage)
+            {
+                return StreamSocket(sock, domain, service, proto, EndpointT::fromStorage(peerStorage));
+            }
 
-    //             //endpoint is implicitly casted
-    //             if(auto recv = ::sendto(fdSocket_, buffer, len, 0, endpoint, endpoint.size()); recv != -1){
-    //                 return recv;
-    //             }
+            std::expected<void, socketError> connect(const EndpointT& endpoint) noexcept{
+                return connectImpl(endpoint);
+            }
 
-    //             throw socketError{"StreamSocket::receive(...): ", errno};
-    //         };
+            std::expected<size_t, socketError> send(const char* buffer, size_t len) noexcept{
+                return sendImpl(buffer, len);
+            }
 
-    //         ssize_t recvFrom(char* buffer, size_t len) override{
-    //             // if(buffer == nullptr) return 0;
+            std::expected<size_t, socketError> receive(char* buffer, size_t len) noexcept{
+                return receiveImpl(buffer, len);
+            }
 
-    //             // //endpoint is implicitly casted
-    //             // if(auto recv = ::recvfrom(fdSocket_, buffer, len, 0, endpoint, endpoint.size()); recv != -1){
-    //             //     return recv;
-    //             // }
+        private:
+            template <class, typename>
+            friend class Connectable;
 
-    //             // throw socketError{"StreamSocket::receive(...): ", errno};
-    //         };
-    // };
+            template <class>
+            friend class IOStream;
+
+            std::expected<void, socketError> connectImpl(const EndpointT& endpoint) noexcept{
+                using AddressLenT = typename internal::SelectedBackend::AddressLenT;
+
+                auto storage = endpoint.toStorage();
+                auto len = static_cast<AddressLenT>(endpoint.storageLen());
+
+                if(!internal::SelectedBackend::connect(handle_, &storage, len)) {
+                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                }
+
+                endpoint_ = endpoint;
+                return {};
+            }
+
+            std::expected<size_t, socketError> sendImpl(const char* buffer, size_t n) noexcept{
+                auto sent = internal::SelectedBackend::send(handle_, buffer, n);
+                if(sent == -1) {
+                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                }
+
+                return sent;
+            }
+
+            std::expected<size_t, socketError> receiveImpl(char* buffer, size_t n) noexcept{
+                auto got = internal::SelectedBackend::receive(handle_, buffer, n);
+                if(got == -1) {
+                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                }
+
+                return got;
+            }
+
+            StreamSocket(
+                typename internal::SelectedBackend::SocketT sock,
+                Domain domain,
+                Service service,
+                Protocol proto,
+                const EndpointT& endpoint) noexcept
+                : SocketBase(sock, domain, service, proto), endpoint_(endpoint){}
+
+            EndpointT endpoint_{};
+    };
+
+    #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
+    //this function is completely optional (and personally I would not use it) unless for very specific reasons. One of them might be
+    //that you are on windows, using Winsock, and you are doing additional OS API level programming, and you need fine grained control 
+    //over the availability of the winsock dll. Otherwise (your program needs ninttp until closing) it will get cleaned up and no resources will
+    //be leaked
+    std::expected<void, socketError> deinitBackend() noexcept{
+        static bool deinited = false;
+
+        if(deinited){
+            return {};
+        }
+
+        if(internal::SelectedBackend::deinit()){
+            deinited = true;
+            return {};
+        }
+
+        return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+    }
+    #endif
 } // namespace ninttp
