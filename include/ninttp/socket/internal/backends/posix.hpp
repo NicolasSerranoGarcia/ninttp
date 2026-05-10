@@ -1,6 +1,8 @@
 #pragma once
 
+#include "../../endpoints.hpp"
 #include "../../types.hpp"
+#include "../../utils.hpp"
 
 #include <optional>
 
@@ -9,14 +11,16 @@
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring> // strerror
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unistd.h>
 
 
 namespace ninttp::internal
 {
 
-    static constexpr int toNative(Domain domain) noexcept{
+    static constexpr inline int toNative(Domain domain) noexcept{
         switch (domain) {
             case Domain::IPv4: return AF_INET;
             case Domain::IPv6: return AF_INET6;
@@ -25,7 +29,7 @@ namespace ninttp::internal
         }
     }
     
-    static constexpr int toNative(Service service) noexcept{
+    static constexpr inline int toNative(Service service) noexcept{
         switch (service) {
             case Service::Stream: return SOCK_STREAM;
             case Service::Datagram: return SOCK_DGRAM;
@@ -35,7 +39,7 @@ namespace ninttp::internal
         }
     }
     
-    static constexpr int toNative(Protocol protocol) noexcept{
+    static constexpr inline int toNative(Protocol protocol) noexcept{
         switch (protocol) {
             case Protocol::Default: return 0;
             case Protocol::Tcp: return IPPROTO_TCP;
@@ -44,7 +48,7 @@ namespace ninttp::internal
         }
     }
     
-    static constexpr Domain toDomain(int nativeDomain) noexcept{
+    static constexpr inline Domain toDomain(int nativeDomain) noexcept{
         switch (nativeDomain) {
             case AF_INET: return Domain::IPv4;
             case AF_INET6: return Domain::IPv6;
@@ -53,7 +57,7 @@ namespace ninttp::internal
         }
     }
 
-    static constexpr Service toService(int nativeService) noexcept{
+    static constexpr inline Service toService(int nativeService) noexcept{
         switch (nativeService) {
             case SOCK_STREAM: return Service::Stream;
             case SOCK_DGRAM: return Service::Datagram;
@@ -63,7 +67,7 @@ namespace ninttp::internal
         }
     }
     
-    static constexpr Protocol toProtocol(int nativeProtocol) noexcept{
+    static constexpr inline Protocol toProtocol(int nativeProtocol) noexcept{
         switch (nativeProtocol) {
             case 0: return Protocol::Default;
             case IPPROTO_TCP: return Protocol::Tcp;
@@ -72,7 +76,7 @@ namespace ninttp::internal
         }
     }
     
-    static constexpr int toNativeShutdownPolicy(ShutdownPolicy what) noexcept{
+    static constexpr inline int toNativeShutdownPolicy(ShutdownPolicy what) noexcept{
         switch(what){
             case ShutdownPolicy::SHUT_RECEPTIONS:
                 return SHUT_RD;
@@ -98,14 +102,14 @@ namespace ninttp::internal
                 AddressLenT len;
             };
 
-            //returns a valid SocketT or INVALID_SOCKET on error. Check getLastError
+            //returns a valid SocketT or invalidSocket() on error. Check getLastError
             static SocketT openSocket(Domain d, Service s, Protocol p) noexcept{
                 return static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
             };
 
             static bool closeSocket(const SocketT& s) noexcept{ return ::close(s) == 0; };
             
-            static constexpr bool isValidSocket(const SocketT& s) noexcept{ return s != INVALID_SOCKET; };
+            static constexpr bool isValidSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
             
             static bool shutdownSocket(const SocketT& s, ShutdownPolicy what) noexcept{
                 return ::shutdown(s, toNativeShutdownPolicy(what)) == 0;
@@ -135,6 +139,37 @@ namespace ninttp::internal
                 return ::connect(s, reinterpret_cast<const sockaddr*>(addr), len) == 0;
             }
 
+            static AddressStorageT toStorage(const ninttp::Ipv4Endpoint& endpoint) noexcept{
+                sockaddr_in native{};
+                native.sin_family = AF_INET;
+                native.sin_addr.s_addr = ninttp::hostToNetwork32(endpoint.addressHostOrder());
+                native.sin_port = ninttp::hostToNetwork16(endpoint.portHostOrder());
+
+                AddressStorageT storage{};
+                std::memcpy(&storage, &native, sizeof(native));
+                return storage;
+            }
+
+            static constexpr AddressLenT storageLen(const ninttp::Ipv4Endpoint&) noexcept{
+                return static_cast<AddressLenT>(sizeof(sockaddr_in));
+            }
+
+            template<typename EndpointT>
+            static EndpointT fromStorage(const AddressStorageT& storage){
+                if constexpr(std::same_as<EndpointT, ninttp::Ipv4Endpoint>){
+                    if(storage.ss_family != AF_INET)
+                        throw std::runtime_error("Invalid IPv4 endpoint storage");
+
+                    sockaddr_in native{};
+                    std::memcpy(&native, &storage, sizeof(native));
+                    return ninttp::Ipv4Endpoint(
+                        ninttp::networkToHost32(native.sin_addr.s_addr),
+                        ninttp::networkToHost16(native.sin_port));
+                }else{
+                    static_assert(std::same_as<EndpointT, ninttp::Ipv4Endpoint>, "Unsupported endpoint type");
+                }
+            }
+
             static ssize_t send(const SocketT& s, const char* buff, size_t n) noexcept{
                 return ::send(s, buff, n, 0);
             }
@@ -143,7 +178,6 @@ namespace ninttp::internal
                 return ::recv(s, buff, n, 0);
             }
 
-
             //native error code
             static ErrorT getLastError() noexcept{ return static_cast<int>(errno); };
 
@@ -151,9 +185,9 @@ namespace ninttp::internal
                 return std::string(strerror(err));
             }
 
-            static constexpr SocketT INVALID_SOCKET = -1;
-
-            static constexpr SocketT invalidSocket() noexcept{ return INVALID_SOCKET; }
+            //this is the only reliable way I found to be explicit about an invalidSocket when we assume they may not be copyable. Creating
+            //an instance guarantees no copy
+            static constexpr inline SocketT invalidSocket() noexcept{ return -1; }
     };
 
 } // namespace ninttp::internal

@@ -3,19 +3,19 @@
 #include <cstdlib>
 #include <iostream>
 
-#include <ninttp/nintraits.hpp>
+#include <ninttp/socket/utils.hpp>
 
 namespace {
 
 template <typename T>
 [[nodiscard]] bool checkRoundTrip(const char* name, T value) {
     const T network = sizeof(T) == 2
-        ? static_cast<T>(hostToNetwork16(static_cast<std::uint16_t>(value)))
-        : static_cast<T>(hostToNetwork32(static_cast<std::uint32_t>(value)));
+        ? static_cast<T>(ninttp::hostToNetwork16(static_cast<std::uint16_t>(value)))
+        : static_cast<T>(ninttp::hostToNetwork32(static_cast<std::uint32_t>(value)));
 
     const T host = sizeof(T) == 2
-        ? static_cast<T>(networkToHost16(static_cast<std::uint16_t>(network)))
-        : static_cast<T>(networkToHost32(static_cast<std::uint32_t>(network)));
+        ? static_cast<T>(ninttp::networkToHost16(static_cast<std::uint16_t>(network)))
+        : static_cast<T>(ninttp::networkToHost32(static_cast<std::uint32_t>(network)));
 
     if (host == value) {
         return true;
@@ -68,10 +68,10 @@ int main() {
         ok = checkRoundTrip("uint32_t", value) && ok;
     }
 
-    ok = checkEqual("zero 16", hostToNetwork16(0x0000u), 0x0000u) && ok;
-    ok = checkEqual("all ones 16", hostToNetwork16(0xFFFFu), 0xFFFFu) && ok;
-    ok = checkEqual("zero 32", hostToNetwork32(0x00000000u), 0x00000000u) && ok;
-    ok = checkEqual("all ones 32", hostToNetwork32(0xFFFFFFFFu), 0xFFFFFFFFu) && ok;
+    ok = checkEqual("zero 16", ninttp::hostToNetwork16(0x0000u), 0x0000u) && ok;
+    ok = checkEqual("all ones 16", ninttp::hostToNetwork16(0xFFFFu), 0xFFFFu) && ok;
+    ok = checkEqual("zero 32", ninttp::hostToNetwork32(0x00000000u), 0x00000000u) && ok;
+    ok = checkEqual("all ones 32", ninttp::hostToNetwork32(0xFFFFFFFFu), 0xFFFFFFFFu) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

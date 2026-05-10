@@ -13,13 +13,7 @@
 
 namespace {
 	ninttp::Ipv4Endpoint makeLoopbackEndpoint(uint16_t port) {
-		ninttp::internal::SelectedBackend::AddressStorageT storage{};
-		auto* ipv4 = reinterpret_cast<sockaddr_in*>(&storage);
-		ipv4->sin_family = AF_INET;
-		ipv4->sin_port = htons(port);
-		ipv4->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-
-		return ninttp::Ipv4Endpoint::fromStorage(storage);
+		return ninttp::Ipv4Endpoint(0x7F000001u, port);
 	}
 }
 

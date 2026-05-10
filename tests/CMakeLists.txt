@@ -1,9 +1,9 @@
 add_executable(ninttp_ninendian_tests
-    ninendian_tests.cpp
+    nintraits_tests.cpp
 )
 
 add_executable(ninttp_ninendian_edge_tests
-    ninendian_edge_tests.cpp
+    nintraits_edge_tests.cpp
 )
 
 add_executable(ninttp_endpoints_invariant_tests

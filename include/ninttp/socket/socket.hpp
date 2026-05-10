@@ -2,10 +2,10 @@
 
 #include <concepts>
 #include <expected>
+#include <utility>
 
 #include "internal/select_backend.hpp"
 #include "internal/socket_core.hpp"
-#include "interfaces.hpp"
 #include "types.hpp"
 
 #include "socket_error.hpp"
@@ -15,37 +15,12 @@ namespace ninttp
 {
     using SocketBase = ninttp::internal::SocketCore<internal::SelectedBackend>;
 
-    template<typename ConnectedSocketT>
-    concept ConnectedSocketFromAccepted = requires(
-        typename internal::SelectedBackend::SocketT sock,
-        Domain domain,
-        Service service,
-        Protocol proto,
-        const typename internal::SelectedBackend::AddressStorageT& storage) {
-        { ConnectedSocketT::fromAccepted(sock, domain, service, proto, storage) } noexcept
-            -> std::convertible_to<std::expected<ConnectedSocketT, socketError>>;
-    };
-
-    template<typename EndpointT>
-    concept EndpointFromStorage = requires(
-        const typename internal::SelectedBackend::AddressStorageT& storage) {
-        { EndpointT::fromStorage(storage) } -> std::convertible_to<EndpointT>;
-    };
-
-    template<typename EndpointT>
-    concept EndpointToStorage = requires(const EndpointT& endpoint) {
-        { endpoint.toStorage() } -> std::convertible_to<typename internal::SelectedBackend::AddressStorageT>;
-        { endpoint.storageLen() } -> std::convertible_to<typename internal::SelectedBackend::AddressLenT>;
-    };
-
-    //connected socket needs a concept to check that it can be built fromAccepted (static method with the same signature)
-    //EndpointT needs the signature ::fromStorage(const AddressStorageT& storage)
-    //it also needs a toStorage and storageLen methods for being able to pass to the backend
+    // ListenerSocket intentionally has no class-level requires clause. The useful
+    // requirements belong to the operations:
+    // - bind() needs the selected backend to translate EndpointT to native storage.
+    // - accept() needs ConnectedSocketT::fromAccepted(...).
     template<typename EndpointT, typename ConnectedSocketT>
-        requires ConnectedSocketFromAccepted<ConnectedSocketT> && EndpointToStorage<EndpointT>
-    class ListenerSocket : protected SocketBase,
-                            public Bindable<ListenerSocket<EndpointT, ConnectedSocketT>, EndpointT>,
-                            public Listener<ListenerSocket<EndpointT, ConnectedSocketT>, ConnectedSocketT>{
+    class ListenerSocket : protected SocketBase{
         public:
             //we should forward the methods that we do want to use from SocketBase, like getters, release...
             ListenerSocket(Domain domain, Protocol proto)
@@ -63,29 +38,10 @@ namespace ninttp
             using SocketBase::shutdown;
 
             std::expected<void, socketError> bind(const EndpointT& endpoint) noexcept{
-                return bindImpl(endpoint);
-            }
-
-            std::expected<void, socketError> listen(int backlog) noexcept{
-                return listenImpl(backlog);
-            }
-
-            std::expected<ConnectedSocketT, socketError> accept() noexcept{
-                return acceptImpl();
-            }
-
-        private:
-            template <class, typename>
-            friend class Bindable;
-
-            template <class, typename>
-            friend class Listener;
-
-            std::expected<void, socketError> bindImpl(const EndpointT& endpoint) noexcept{
                 using AddressLenT = typename internal::SelectedBackend::AddressLenT;
 
-                auto storage = endpoint.toStorage();
-                auto len = static_cast<AddressLenT>(endpoint.storageLen());
+                auto storage = internal::SelectedBackend::toStorage(endpoint);
+                auto len = static_cast<AddressLenT>(internal::SelectedBackend::storageLen(endpoint));
 
                 if(!internal::SelectedBackend::bind(handle_, &storage, len)) {
                     return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
@@ -94,7 +50,7 @@ namespace ninttp
                 return {};
             }
 
-            std::expected<void, socketError> listenImpl(int backlog) noexcept{
+            std::expected<void, socketError> listen(int backlog) noexcept{
                 if(!internal::SelectedBackend::listen(handle_, backlog)) {
                     return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
                 }
@@ -102,7 +58,7 @@ namespace ninttp
                 return {};
             }
 
-            std::expected<ConnectedSocketT, socketError> acceptImpl() noexcept{
+            std::expected<ConnectedSocketT, socketError> accept(){
                 auto accepted = internal::SelectedBackend::accept(handle_);
                 if(!accepted.has_value()) {
                     return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
@@ -117,11 +73,11 @@ namespace ninttp
             }
     };
 
+    // StreamSocket follows the same "method contract" rule:
+    // - connect() needs the selected backend to translate EndpointT to native storage.
+    // - fromAccepted() needs the selected backend to rebuild EndpointT from native storage.
     template<typename EndpointT>
-        requires EndpointFromStorage<EndpointT> && EndpointToStorage<EndpointT>
-    class StreamSocket : protected SocketBase,
-                         public Connectable<StreamSocket<EndpointT>, EndpointT>,
-                         public IOStream<StreamSocket<EndpointT>>{
+    class StreamSocket : protected SocketBase{
         public:
             StreamSocket(Domain domain, Protocol proto)
                 : SocketBase(domain, Service::Stream, proto){}
@@ -142,35 +98,21 @@ namespace ninttp
                 Domain domain,
                 Service service,
                 Protocol proto,
-                const typename internal::SelectedBackend::AddressStorageT& peerStorage) noexcept
+                const typename internal::SelectedBackend::AddressStorageT& peerStorage)
             {
-                return StreamSocket(sock, domain, service, proto, EndpointT::fromStorage(peerStorage));
+                return StreamSocket(
+                    sock,
+                    domain,
+                    service,
+                    proto,
+                    internal::SelectedBackend::template fromStorage<EndpointT>(peerStorage));
             }
 
             std::expected<void, socketError> connect(const EndpointT& endpoint) noexcept{
-                return connectImpl(endpoint);
-            }
-
-            std::expected<size_t, socketError> send(const char* buffer, size_t len) noexcept{
-                return sendImpl(buffer, len);
-            }
-
-            std::expected<size_t, socketError> receive(char* buffer, size_t len) noexcept{
-                return receiveImpl(buffer, len);
-            }
-
-        private:
-            template <class, typename>
-            friend class Connectable;
-
-            template <class>
-            friend class IOStream;
-
-            std::expected<void, socketError> connectImpl(const EndpointT& endpoint) noexcept{
                 using AddressLenT = typename internal::SelectedBackend::AddressLenT;
 
-                auto storage = endpoint.toStorage();
-                auto len = static_cast<AddressLenT>(endpoint.storageLen());
+                auto storage = internal::SelectedBackend::toStorage(endpoint);
+                auto len = static_cast<AddressLenT>(internal::SelectedBackend::storageLen(endpoint));
 
                 if(!internal::SelectedBackend::connect(handle_, &storage, len)) {
                     return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
@@ -180,8 +122,8 @@ namespace ninttp
                 return {};
             }
 
-            std::expected<size_t, socketError> sendImpl(const char* buffer, size_t n) noexcept{
-                auto sent = internal::SelectedBackend::send(handle_, buffer, n);
+            std::expected<size_t, socketError> send(const char* buffer, size_t len) noexcept{
+                auto sent = internal::SelectedBackend::send(handle_, buffer, len);
                 if(sent == -1) {
                     return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
                 }
@@ -189,8 +131,8 @@ namespace ninttp
                 return sent;
             }
 
-            std::expected<size_t, socketError> receiveImpl(char* buffer, size_t n) noexcept{
-                auto got = internal::SelectedBackend::receive(handle_, buffer, n);
+            std::expected<size_t, socketError> receive(char* buffer, size_t len) noexcept{
+                auto got = internal::SelectedBackend::receive(handle_, buffer, len);
                 if(got == -1) {
                     return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
                 }
@@ -198,6 +140,7 @@ namespace ninttp
                 return got;
             }
 
+        private:
             StreamSocket(
                 typename internal::SelectedBackend::SocketT sock,
                 Domain domain,
@@ -217,9 +160,8 @@ namespace ninttp
     std::expected<void, socketError> deinitBackend() noexcept{
         static bool deinited = false;
 
-        if(deinited){
+        if(deinited)
             return {};
-        }
 
         if(internal::SelectedBackend::deinit()){
             deinited = true;

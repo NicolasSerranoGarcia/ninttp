@@ -31,7 +31,7 @@ namespace ninttp::internal
     //Semantics: a variable of this type can be reused to hold multiple valid instances of a socket representation. 
     //the directives "open", "close" and "release" enable for multiple usage throughout the lifetime. One can also move 
     //an instance to another (which would be an equivalent to an "adopt" method, but as a SocketT has a Domain, 
-    //Service and Protocol associated, this later operation would essentially a move operation, which is why it is not present in the API and
+    //Service and Protocol associated, this later operation would essentially be a move operation, which is why it is not present in the API and
     //move operator is encouraged instead for transfering ownership)
     template <SocketBackend BackendT>
     class SocketCore{
@@ -89,6 +89,8 @@ namespace ninttp::internal
             //Only checks for backend validity. it can happen that the socket is valid, but it is not usable nor opened (for external causes)
             constexpr bool isValid() const noexcept{ return BackendT::isValidSocket(handle_); }
 
+            //TODO: enforce conditions on socket state (thus implementing isOpen and isUsable) (invariants)
+
             //currently the same as isValid
             constexpr bool isUsable() const noexcept{ return isValid(); };
 
@@ -101,8 +103,9 @@ namespace ninttp::internal
 
             constexpr Protocol protocol() const noexcept{ return proto_; };
 
-            // return native handle. Do not modify or acquire by other sockets because then own semantics will be lost
-            constexpr SocketT nativeHandle() const noexcept{ return handle_; };
+            // Return a read-only view of the native handle. Do not acquire it by
+            // another owner unless you first release() this SocketCore.
+            constexpr const SocketT& nativeHandle() const noexcept{ return handle_; };
 
             std::expected<void, socketError> shutdown(ShutdownPolicy what) noexcept{
                 if(BackendT::shutdownSocket(this->handle_, what)){

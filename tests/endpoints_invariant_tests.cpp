@@ -1,12 +1,14 @@
-#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
 
-#include <arpa/inet.h>
+#include <netinet/in.h>
 
 #include <ninttp/socket/endpoints.hpp>
+#include <ninttp/socket/internal/select_backend.hpp>
+#include <ninttp/socket/utils.hpp>
 
 namespace {
 
@@ -19,13 +21,10 @@ namespace {
     return false;
 }
 
-[[nodiscard]] bool checkBytesEqual(const char* name, const in6_addr& actual, const in6_addr& expected) {
-    if (std::memcmp(actual.s6_addr, expected.s6_addr, sizeof(actual.s6_addr)) == 0) {
-        return true;
-    }
-
-    std::cerr << name << " failed: IPv6 bytes mismatch\n";
-    return false;
+[[nodiscard]] sockaddr_in readIpv4(const ninttp::internal::SelectedBackend::AddressStorageT& storage) {
+    sockaddr_in out{};
+    std::memcpy(&out, &storage, sizeof(out));
+    return out;
 }
 
 } // namespace
@@ -37,27 +36,50 @@ int main() {
         constexpr std::uint32_t hostAddress = 0x7F000001u;
         constexpr std::uint16_t hostPort = 8080u;
 
-        ninttp::Ipv4Endpoint endpoint(hostAddress, hostPort);
+        const ninttp::Ipv4Endpoint endpoint(hostAddress, hostPort);
+        const auto storage = ninttp::internal::SelectedBackend::toStorage(endpoint);
+        const auto native = readIpv4(storage);
 
-        ok = checkEqual("IPv4 host getter", endpoint.addressHostOrder(), hostAddress) && ok;
-        ok = checkEqual("IPv4 network getter", endpoint.addressNetworkOrder(), hostToNetwork32(hostAddress)) && ok;
-        ok = checkEqual("IPv4 port host getter", endpoint.portHostOrder(), hostPort) && ok;
-        ok = checkEqual("IPv4 port network getter", endpoint.portNetworkOrder(), hostToNetwork16(hostPort)) && ok;
+        ok = checkEqual("IPv4 host address", endpoint.addressHostOrder(), hostAddress) && ok;
+        ok = checkEqual("IPv4 host port", endpoint.portHostOrder(), hostPort) && ok;
+        ok = checkEqual("IPv4 family", native.sin_family, AF_INET) && ok;
+        ok = checkEqual("IPv4 network address", native.sin_addr.s_addr, ninttp::hostToNetwork32(hostAddress)) && ok;
+        ok = checkEqual("IPv4 network port", native.sin_port, ninttp::hostToNetwork16(hostPort)) && ok;
+        ok = checkEqual("IPv4 storage length", ninttp::internal::SelectedBackend::storageLen(endpoint), sizeof(sockaddr_in)) && ok;
     }
 
     {
-        in_addr hostAddress{};
-        hostAddress.s_addr = 0x0A000001u;
+        ninttp::internal::SelectedBackend::AddressStorageT storage{};
+        auto native = readIpv4(storage);
+        native.sin_family = AF_INET;
+        native.sin_addr.s_addr = ninttp::hostToNetwork32(0x0A000001u);
+        native.sin_port = ninttp::hostToNetwork16(80u);
+        std::memcpy(&storage, &native, sizeof(native));
 
-        ninttp::Ipv4Endpoint endpoint(hostAddress, 80u);
-        ok = checkEqual("IPv4 in_addr host invariant", endpoint.addressHostOrder(), hostAddress.s_addr) && ok;
+        const auto endpoint = ninttp::internal::SelectedBackend::fromStorage<ninttp::Ipv4Endpoint>(storage);
+        const auto roundTrip = readIpv4(ninttp::internal::SelectedBackend::toStorage(endpoint));
 
-        in_addr networkAddress{};
-        ::inet_pton(AF_INET, "127.0.0.1", &networkAddress);
-        endpoint.setAddressNetworkOrder(networkAddress);
+        ok = checkEqual("IPv4 fromStorage family", roundTrip.sin_family, AF_INET) && ok;
+        ok = checkEqual("IPv4 fromStorage address", roundTrip.sin_addr.s_addr, native.sin_addr.s_addr) && ok;
+        ok = checkEqual("IPv4 fromStorage port", roundTrip.sin_port, native.sin_port) && ok;
+        ok = checkEqual("IPv4 fromStorage host address", endpoint.addressHostOrder(), 0x0A000001u) && ok;
+        ok = checkEqual("IPv4 fromStorage host port", endpoint.portHostOrder(), 80u) && ok;
+    }
 
-        ok = checkEqual("IPv4 set network order", endpoint.addressNetworkOrder(), networkAddress.s_addr) && ok;
-        ok = checkEqual("IPv4 set network host read", endpoint.addressHostOrder(), networkToHost32(networkAddress.s_addr)) && ok;
+    {
+        ninttp::internal::SelectedBackend::AddressStorageT storage{};
+        bool threw = false;
+
+        try {
+            (void)ninttp::internal::SelectedBackend::fromStorage<ninttp::Ipv4Endpoint>(storage);
+        } catch (const std::runtime_error&) {
+            threw = true;
+        }
+
+        if (!threw) {
+            std::cerr << "IPv4 fromStorage rejected invalid family failed\n";
+            ok = false;
+        }
     }
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;

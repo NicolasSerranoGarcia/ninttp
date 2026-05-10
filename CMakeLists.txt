@@ -96,7 +96,6 @@ configure_file(
 
 set(public_headers
     include/ninttp/nintraits.hpp
-    include/ninttp/socket/interfaces.hpp
     include/ninttp/socket/socket_error.hpp
     include/ninttp/socket/types.hpp
     include/ninttp/socket/endpoints.hpp
@@ -192,11 +191,11 @@ endif()
 
 # TEST AND EXAMPLES
 
-if(NINTTP_BUILD_TESTS)
+if(ninttp_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-if(NINTTP_BUILD_EXAMPLES)
+if(ninttp_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
