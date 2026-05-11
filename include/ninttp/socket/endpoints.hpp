@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "../nintraits.hpp"
+
 namespace ninttp
 {
     class Ipv4Endpoint{
@@ -46,6 +48,14 @@ namespace ninttp
              */
             constexpr uint16_t portHostOrder() const noexcept{
                 return port_;
+            }
+
+            static constexpr inline Ipv4Endpoint loopback(uint16_t hostOrderPort){
+                #if NINTTP_BYTE_ORDER == NINTTP_LITTLE_ENDIAN
+                return Ipv4Endpoint{0x7F000001u, hostOrderPort};
+                #elif NINTTP_BYTE_ORDER == NINTTP_BIG_ENDIAN
+                return Ipv4Endpoint{0x0100007Fu, hostOrderPort};
+                #endif
             }
 
         private:

@@ -20,6 +20,9 @@
 //Always defined when including ninendian.hpp
 #define NINTTP_LITTLE_ENDIAN 1234
 
+//TEMPORAL
+#define NINTTP_BYTE_ORDER NINTTP_LITTLE_ENDIAN
+
 #if defined __unix__ || defined __unix
     #include <sys/param.h>
     #if defined __BYTE_ORDER

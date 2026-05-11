@@ -10,11 +10,24 @@ project(ninttp
 
 add_library(ninttp INTERFACE)
 add_library(ninttp::ninttp ALIAS ninttp)
+set(ninttp_export_targets ninttp)
 
 string(COMPARE EQUAL
     "${CMAKE_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}"
     is_top_level)
+
+# DEPENDENCIES
+
+if(WIN32)
+
+    include(${CMAKE_SOURCE_DIR}/cmake/win32.cmake)
+    list(APPEND ninttp_export_targets ninttp_win32_library)
+
+    target_link_libraries(ninttp INTERFACE ninttp_win32_library)
+
+endif()
+
 
 # BUILD OPTIONS
 
@@ -158,7 +171,7 @@ if(ninttp_INSTALL)
     # Even though this is a header-only library and there is no binary artifact,
     # install(TARGETS ...) still makes sense because we want to export the INTERFACE target
     # so downstream users can do find_package(ninttp) and target_link_libraries(... ninttp::ninttp).
-    install(TARGETS ninttp
+    install(TARGETS ${ninttp_export_targets}
         EXPORT ninttp_export
     )
 
