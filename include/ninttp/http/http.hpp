@@ -72,19 +72,18 @@ namespace ninttp
                     char buf[512];
 
                     for(;;){
-                        std::memset(buf, 0, 512);
-
                         auto res = streamSock.receive(buf, sizeof(buf));
 
                         if(!res.has_value())
                             return std::unexpected{res.error()};
 
-                        int i = 0;
+                        size_t read = res.value();
 
-                        while(buf[i] != '\0'){
+                        if(read == 0)
+                            break;
+
+                        for(int i = 0; i < read; ++i)
                             result.push_back(buf[i]);
-                            ++i;
-                        }
 
                         if(result.ends_with("\r\n\r\n"))
                             break;
@@ -118,33 +117,33 @@ namespace ninttp
             httpClient() = delete;
 
             httpClient(const EndpointT& peer)
-                : sock_(Domain::IPv4, Protocol::Tcp)
+                : streamSock_(Domain::IPv4, Protocol::Tcp)
             {
-                if(const auto res = sock_.connect(peer); !res.has_value())
+                if(const auto res = streamSock_.connect(peer); !res.has_value())
                     throw res.error();
             }
 
             //at the moment literally send the resource
             std::expected<Response, SocketError> GET(const std::string& resource){
                 std::string msg = resource + std::string("\r\n\r\n");
-                sock_.send(msg.data(), msg.size());
+                streamSock_.send(msg.data(), msg.size());
 
                 Response response;
 
                 char buf[512];
 
                 for(;;){
-                    std::memset(buf, 0, 512);
-                    auto res = sock_.receive(buf, sizeof(buf));
+                    auto res = streamSock_.receive(buf, sizeof(buf));
                     if(!res.has_value())
                         return std::unexpected{res.error()};
 
-                    int i = 0;
+                    size_t got = res.value();
 
-                    while(buf[i] != '\0'){
+                    if(got == 0)
+                        break;
+
+                    for(size_t i = 0; i < got; ++i)
                         response.contents.push_back(buf[i]);
-                        ++i;
-                    }
 
                     if(response.contents.ends_with("\r\n\r\n"))
                         break;
@@ -155,6 +154,6 @@ namespace ninttp
             }
 
         private:
-            StreamSocket<EndpointT> sock_;
+            StreamSocket<EndpointT> streamSock_;
     };
 } // namespace ninttp
