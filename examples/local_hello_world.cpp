@@ -10,13 +10,13 @@
 
 int main(){
 	try {
-		using Endpoint = ninttp::Ipv4Endpoint;
+		using Endpoint = ninttp::IPv4Endpoint;
 		using ClientSocket = ninttp::StreamSocket<Endpoint>;
 		using ServerSocket = ninttp::ListenerSocket<Endpoint, ClientSocket>;
 
 		constexpr auto message = "hello world";
 		const auto port = static_cast<uint16_t>(40000 + (::getpid() % 10000));
-		const auto endpoint = ninttp::Ipv4Endpoint::loopback(port);
+		const auto endpoint = ninttp::IPv4Endpoint::loopback(port);
 
 		ServerSocket server(ninttp::Domain::IPv4, ninttp::Protocol::Tcp);
 
@@ -61,7 +61,7 @@ int main(){
 
 		std::cout << "server received: " << buffer.data() << '\n';
 		return 0;
-	} catch (const ninttp::socketError& error) {
+	} catch (const ninttp::SocketError& error) {
 		std::cerr << "socket setup failed: " << error.msg() << '\n';
 		return 1;
 	} catch (const std::exception& error) {

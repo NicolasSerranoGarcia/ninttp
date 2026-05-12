@@ -61,7 +61,7 @@ namespace ninttp::internal
 
                 handle_ = BackendT::openSocket(d, s, p);
                 if(!BackendT::isValidSocket(handle_))
-                    throw socketError{BackendT::getLastError()};
+                    throw SocketError{BackendT::getLastError()};
             }
 
             SocketCore(const SocketCore&) = delete;
@@ -107,12 +107,12 @@ namespace ninttp::internal
             // another owner unless you first release() this SocketCore.
             constexpr const SocketT& nativeHandle() const noexcept{ return handle_; };
 
-            std::expected<void, socketError> shutdown(ShutdownPolicy what) noexcept{
+            std::expected<void, SocketError> shutdown(ShutdownPolicy what) noexcept{
                 if(BackendT::shutdownSocket(this->handle_, what)){
                     return {};
                 }
 
-                return std::unexpected{socketError{BackendT::getLastError()}};
+                return std::unexpected{SocketError{BackendT::getLastError()}};
             }
 
             //closes previous state. May return an error if closing didn't work. Does not change state if so (strong guarantee).
@@ -120,13 +120,13 @@ namespace ninttp::internal
             //maybe preopen a socket, and if it fails return the error, and only then close the previous?
             //but if closing fails, we will need to close the preallocated socket, but that can also fail, leaving us with two error codes (failed closing the previous
             //and failed closing the preallocated). Look into this
-            std::expected<void, socketError> open(Domain d, Service s, Protocol p) noexcept{
+            std::expected<void, SocketError> open(Domain d, Service s, Protocol p) noexcept{
                 if(auto e = this->close(); !e.has_value())
                     return std::unexpected{e.error()};
 
                 handle_ = BackendT::openSocket(d, s, p);
                 if(!BackendT::isValidSocket(handle_))
-                    return std::unexpected{socketError{BackendT::getLastError()}};
+                    return std::unexpected{SocketError{BackendT::getLastError()}};
 
                 domain_ = d;
                 service_ = s;
@@ -143,7 +143,7 @@ namespace ninttp::internal
 
             //explicit cleanup, better for handling than the destructor
             //invalidates the instance. 
-            std::expected<void, socketError> close() noexcept{
+            std::expected<void, SocketError> close() noexcept{
                 //already closed or invalidated somewhere else
                 if(!BackendT::isValidSocket(handle_))
                     return {};
@@ -153,7 +153,7 @@ namespace ninttp::internal
                     return {};
                 }
 
-                return std::unexpected{socketError{BackendT::getLastError()}};
+                return std::unexpected{SocketError{BackendT::getLastError()}};
             }
 
             //please be aware of letting the destructor handle shutdown of the socket instead of manually calling close()
@@ -193,7 +193,7 @@ namespace ninttp::internal
             static void initBackend(){
                 if(!backendInited){
                     if(!BackendT::init())
-                        throw socketError{BackendT::getLastError()};
+                        throw SocketError{BackendT::getLastError()};
                     backendInited = true;
                 }
             }

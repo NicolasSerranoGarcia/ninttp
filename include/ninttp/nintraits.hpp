@@ -20,11 +20,11 @@
 //Always defined when including ninendian.hpp
 #define NINTTP_LITTLE_ENDIAN 1234
 
-//TEMPORAL
-#define NINTTP_BYTE_ORDER NINTTP_LITTLE_ENDIAN
-
-#if defined __unix__ || defined __unix
+#if !defined(NINTTP_BYTE_ORDER) && (defined __unix__ || defined __unix || defined __APPLE__ || defined(__MACH__))
     #include <sys/param.h>
+#endif
+
+#ifndef NINTTP_BYTE_ORDER
     #if defined __BYTE_ORDER
         #if __BYTE_ORDER == __LITTLE_ENDIAN
             #define NINTTP_BYTE_ORDER NINTTP_LITTLE_ENDIAN
@@ -32,7 +32,9 @@
             #define NINTTP_BYTE_ORDER NINTTP_BIG_ENDIAN
         #endif
     #endif
+#endif
 
+#ifndef NINTTP_BYTE_ORDER
     #if defined __BYTE_ORDER__
         #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             #define NINTTP_BYTE_ORDER NINTTP_LITTLE_ENDIAN
@@ -40,6 +42,20 @@
             #define NINTTP_BYTE_ORDER NINTTP_BIG_ENDIAN
         #endif
     #endif
+#endif
+
+#ifndef NINTTP_BYTE_ORDER
+    #if defined(_WIN32) || defined(_WIN64) || defined(_M_IX86) || defined(_M_X64) || defined(_M_ARM) || defined(_M_ARM64)
+        #define NINTTP_BYTE_ORDER NINTTP_LITTLE_ENDIAN
+    #elif defined(__i386__) || defined(__x86_64__) || defined(__AARCH64EL__) || defined(__ARMEL__) || defined(__MIPSEL__)
+        #define NINTTP_BYTE_ORDER NINTTP_LITTLE_ENDIAN
+    #elif defined(__AARCH64EB__) || defined(__ARMEB__) || defined(__MIPSEB__)
+        #define NINTTP_BYTE_ORDER NINTTP_BIG_ENDIAN
+    #endif
+#endif
+
+#ifndef NINTTP_BYTE_ORDER
+    #error "ninttp: Unable to detect host byte order. Define NINTTP_BYTE_ORDER to NINTTP_LITTLE_ENDIAN or NINTTP_BIG_ENDIAN."
 #endif
 
 #ifdef NINTTP_BYTE_ORDER

@@ -6,7 +6,7 @@
 
 namespace ninttp
 {
-    class Ipv4Endpoint{
+    class IPv4Endpoint{
         public:
             /**
              * @brief Builds the IPv4 wildcard endpoint on port 0.
@@ -15,7 +15,7 @@ namespace ninttp
              * @post addressHostOrder() == 0.
              * @post portHostOrder() == 0.
              */
-            constexpr Ipv4Endpoint() noexcept = default;
+            constexpr IPv4Endpoint() noexcept = default;
 
             /**
              * @brief Builds an IPv4 endpoint value.
@@ -26,7 +26,7 @@ namespace ninttp
              * @post addressHostOrder() == hostOrderAddress.
              * @post portHostOrder() == hostOrderPort.
              */
-            constexpr Ipv4Endpoint(uint32_t hostOrderAddress, uint16_t hostOrderPort) noexcept
+            constexpr IPv4Endpoint(uint32_t hostOrderAddress, uint16_t hostOrderPort) noexcept
                 : address_(hostOrderAddress), port_(hostOrderPort){}
 
             /**
@@ -50,11 +50,11 @@ namespace ninttp
                 return port_;
             }
 
-            static constexpr inline Ipv4Endpoint loopback(uint16_t hostOrderPort){
+            static constexpr inline IPv4Endpoint loopback(uint16_t hostOrderPort){
                 #if NINTTP_BYTE_ORDER == NINTTP_LITTLE_ENDIAN
-                return Ipv4Endpoint{0x7F000001u, hostOrderPort};
+                return IPv4Endpoint{0x7F000001u, hostOrderPort};
                 #elif NINTTP_BYTE_ORDER == NINTTP_BIG_ENDIAN
-                return Ipv4Endpoint{0x0100007Fu, hostOrderPort};
+                return IPv4Endpoint{0x0100007Fu, hostOrderPort};
                 #endif
             }
 

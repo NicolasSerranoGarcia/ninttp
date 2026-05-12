@@ -2,7 +2,6 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#pragma comment(lib, "Ws2_32.lib")
 
 #include <concepts>
 #include <cstring>
@@ -14,6 +13,7 @@
 
 #include "../../types.hpp"
 #include "../../utils.hpp"
+#include "../../endpoints.hpp"
 
 namespace ninttp::internal
 {
@@ -135,34 +135,34 @@ namespace ninttp::internal
                 return ::connect(s, reinterpret_cast<const sockaddr*>(addr), len) != SOCKET_ERROR;
             }
 
-            static AddressStorageT toStorage(const ninttp::Ipv4Endpoint& endpoint) noexcept{ 
+            static AddressStorageT toStorage(const IPv4Endpoint& endpoint) noexcept{ 
                 sockaddr_in native{};
                 native.sin_family = AF_INET;
-                native.sin_addr.s_addr = ninttp::hostToNetwork32(endpoint.addressHostOrder());
-                native.sin_port = ninttp::hostToNetwork16(endpoint.portHostOrder());
+                native.sin_addr.s_addr = hostToNetwork32(endpoint.addressHostOrder());
+                native.sin_port = hostToNetwork16(endpoint.portHostOrder());
 
                 AddressStorageT storage{};
                 std::memcpy(&storage, &native, sizeof(native));
                 return storage;
             }
 
-            static constexpr AddressLenT storageLen(const ninttp::Ipv4Endpoint&) noexcept{
+            static constexpr AddressLenT storageLen(const IPv4Endpoint&) noexcept{
                 return static_cast<AddressLenT>(sizeof(sockaddr_in));
             }
 
             template<typename EndpointT>
             static EndpointT fromStorage(const AddressStorageT& storage){
-                if constexpr(std::same_as<EndpointT, ninttp::Ipv4Endpoint>){
+                if constexpr(std::same_as<EndpointT, IPv4Endpoint>){
                     if(storage.ss_family != AF_INET)
                         throw std::runtime_error("Invalid IPv4 endpoint storage");
 
                     sockaddr_in native{};
                     std::memcpy(&native, &storage, sizeof(native));
-                    return ninttp::Ipv4Endpoint(
-                        ninttp::networkToHost32(native.sin_addr.s_addr),
-                        ninttp::networkToHost16(native.sin_port));
+                    return IPv4Endpoint(
+                        networkToHost32(native.sin_addr.s_addr),
+                        networkToHost16(native.sin_port));
                 }else{
-                    static_assert(std::same_as<EndpointT, ninttp::Ipv4Endpoint>, "Unsupported endpoint type");
+                    static_assert(std::same_as<EndpointT, IPv4Endpoint>, "Unsupported endpoint type");
                 }
             }
 

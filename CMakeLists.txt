@@ -21,7 +21,7 @@ string(COMPARE EQUAL
 
 if(WIN32)
 
-    include(${CMAKE_SOURCE_DIR}/cmake/win32.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/win32.cmake)
     list(APPEND ninttp_export_targets ninttp_win32_library)
 
     target_link_libraries(ninttp INTERFACE ninttp_win32_library)
@@ -33,6 +33,7 @@ endif()
 
 include(cmake/utils.cmake)
 include(CheckIncludeFileCXX)
+include(TestBigEndian)
 
 # This is an internal CMake module (GNUInstallDirs.cmake) that unifies the paths for installation.
 # It defines valuable variables such as CMAKE_INSTALL_INCLUDEDIR, CMAKE_INSTALL_LIBDIR, etc.
@@ -71,6 +72,14 @@ set(NINTTP_CONFIG_BACKEND_POSIX 0)
 set(NINTTP_CONFIG_SOCKET_BACKEND_REQUIRES_INIT 0)
 set(NINTTP_CONFIG_SOCKET_INVALID_HANDLE_ALL_BITS_ONE 0)
 set(NINTTP_CONFIG_SOCKET_INVALID_HANDLE_MINUS_ONE 0)
+set(NINTTP_CONFIG_BYTE_ORDER 0)
+
+test_big_endian(NINTTP_CONFIG_IS_BIG_ENDIAN)
+if(NINTTP_CONFIG_IS_BIG_ENDIAN)
+    set(NINTTP_CONFIG_BYTE_ORDER 4321)
+else()
+    set(NINTTP_CONFIG_BYTE_ORDER 1234)
+endif()
 
 if(WIN32 AND NINTTP_HAS_WINSOCK2_H)
     set(NINTTP_CONFIG_PLATFORM_WINDOWS 1)

@@ -37,31 +37,31 @@ namespace ninttp
             using SocketBase::service;
             using SocketBase::shutdown;
 
-            std::expected<void, socketError> bind(const EndpointT& endpoint) noexcept{
+            std::expected<void, SocketError> bind(const EndpointT& endpoint) noexcept{
                 using AddressLenT = typename internal::SelectedBackend::AddressLenT;
 
                 auto storage = internal::SelectedBackend::toStorage(endpoint);
                 auto len = static_cast<AddressLenT>(internal::SelectedBackend::storageLen(endpoint));
 
                 if(!internal::SelectedBackend::bind(handle_, &storage, len)) {
-                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
                 }
 
                 return {};
             }
 
-            std::expected<void, socketError> listen(int backlog) noexcept{
+            std::expected<void, SocketError> listen(int backlog) noexcept{
                 if(!internal::SelectedBackend::listen(handle_, backlog)) {
-                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
                 }
 
                 return {};
             }
 
-            std::expected<ConnectedSocketT, socketError> accept(){
+            std::expected<ConnectedSocketT, SocketError> accept(){
                 auto accepted = internal::SelectedBackend::accept(handle_);
                 if(!accepted.has_value()) {
-                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
                 }
 
                 return ConnectedSocketT::fromAccepted(
@@ -93,7 +93,7 @@ namespace ninttp
             using SocketBase::service;
             using SocketBase::shutdown;
 
-            static std::expected<StreamSocket, socketError> fromAccepted(
+            static std::expected<StreamSocket, SocketError> fromAccepted(
                 typename internal::SelectedBackend::SocketT sock,
                 Domain domain,
                 Service service,
@@ -108,34 +108,33 @@ namespace ninttp
                     internal::SelectedBackend::template fromStorage<EndpointT>(peerStorage));
             }
 
-            std::expected<void, socketError> connect(const EndpointT& endpoint) noexcept{
+            std::expected<void, SocketError> connect(const EndpointT& endpoint) noexcept{
                 using AddressLenT = typename internal::SelectedBackend::AddressLenT;
 
                 auto storage = internal::SelectedBackend::toStorage(endpoint);
                 auto len = static_cast<AddressLenT>(internal::SelectedBackend::storageLen(endpoint));
 
                 if(!internal::SelectedBackend::connect(handle_, &storage, len)) {
-                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
                 }
 
                 endpoint_ = endpoint;
                 return {};
             }
 
-            std::expected<size_t, socketError> send(const char* buffer, size_t len) noexcept{
+            std::expected<size_t, SocketError> send(const char* buffer, size_t len) noexcept{
                 auto sent = internal::SelectedBackend::send(handle_, buffer, len);
                 if(sent == -1) {
-                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
                 }
 
                 return sent;
             }
 
-            std::expected<size_t, socketError> receive(char* buffer, size_t len) noexcept{
+            std::expected<size_t, SocketError> receive(char* buffer, size_t len) noexcept{
                 auto got = internal::SelectedBackend::receive(handle_, buffer, len);
-                if(got == -1) {
-                    return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
-                }
+                if(got == -1)
+                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
 
                 return got;
             }
@@ -157,7 +156,7 @@ namespace ninttp
     //that you are on windows, using Winsock, and you are doing additional OS API level programming, and you need fine grained control 
     //over the availability of the winsock dll. Otherwise (your program needs ninttp until closing) it will get cleaned up and no resources will
     //be leaked
-    std::expected<void, socketError> deinitBackend() noexcept{
+    std::expected<void, SocketError> deinitBackend() noexcept{
         static bool deinited = false;
 
         if(deinited)
@@ -168,7 +167,7 @@ namespace ninttp
             return {};
         }
 
-        return std::unexpected{socketError{internal::SelectedBackend::getLastError()}};
+        return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
     }
     #endif
 } // namespace ninttp

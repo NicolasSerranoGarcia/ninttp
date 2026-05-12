@@ -73,9 +73,9 @@ namespace ninttp::internal {
             { Backend::accept(socket) } noexcept -> std::same_as<std::optional<typename Backend::AddressBundleT>>;
             { Backend::connect(socket, addr, addrLen) } noexcept -> std::convertible_to<bool>;
 
-            { Backend::toStorage(ninttp::Ipv4Endpoint{}) } noexcept -> std::same_as<typename Backend::AddressStorageT>;
-            { Backend::storageLen(ninttp::Ipv4Endpoint{}) } noexcept -> std::convertible_to<typename Backend::AddressLenT>;
-            { Backend::template fromStorage<ninttp::Ipv4Endpoint>(*addr) } -> std::same_as<ninttp::Ipv4Endpoint>;
+            { Backend::toStorage(ninttp::IPv4Endpoint{}) } noexcept -> std::same_as<typename Backend::AddressStorageT>;
+            { Backend::storageLen(ninttp::IPv4Endpoint{}) } noexcept -> std::convertible_to<typename Backend::AddressLenT>;
+            { Backend::template fromStorage<ninttp::IPv4Endpoint>(*addr) } -> std::same_as<ninttp::IPv4Endpoint>;
 
             { Backend::send(socket, sendBuff, n) } noexcept -> std::convertible_to<std::ptrdiff_t>;
             { Backend::receive(socket, recvBuff, n) } noexcept -> std::convertible_to<std::ptrdiff_t>;

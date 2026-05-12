@@ -4,8 +4,6 @@
 #include <iostream>
 #include <stdexcept>
 
-#include <netinet/in.h>
-
 #include <ninttp/socket/endpoints.hpp>
 #include <ninttp/socket/internal/select_backend.hpp>
 #include <ninttp/socket/utils.hpp>
@@ -36,7 +34,7 @@ int main() {
         constexpr std::uint32_t hostAddress = 0x7F000001u;
         constexpr std::uint16_t hostPort = 8080u;
 
-        const ninttp::Ipv4Endpoint endpoint(hostAddress, hostPort);
+        const ninttp::IPv4Endpoint endpoint(hostAddress, hostPort);
         const auto storage = ninttp::internal::SelectedBackend::toStorage(endpoint);
         const auto native = readIpv4(storage);
 
@@ -56,7 +54,7 @@ int main() {
         native.sin_port = ninttp::hostToNetwork16(80u);
         std::memcpy(&storage, &native, sizeof(native));
 
-        const auto endpoint = ninttp::internal::SelectedBackend::fromStorage<ninttp::Ipv4Endpoint>(storage);
+        const auto endpoint = ninttp::internal::SelectedBackend::fromStorage<ninttp::IPv4Endpoint>(storage);
         const auto roundTrip = readIpv4(ninttp::internal::SelectedBackend::toStorage(endpoint));
 
         ok = checkEqual("IPv4 fromStorage family", roundTrip.sin_family, AF_INET) && ok;
@@ -71,7 +69,7 @@ int main() {
         bool threw = false;
 
         try {
-            (void)ninttp::internal::SelectedBackend::fromStorage<ninttp::Ipv4Endpoint>(storage);
+            (void)ninttp::internal::SelectedBackend::fromStorage<ninttp::IPv4Endpoint>(storage);
         } catch (const std::runtime_error&) {
             threw = true;
         }

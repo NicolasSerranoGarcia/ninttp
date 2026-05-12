@@ -1,7 +1,7 @@
 /**
  * @file socket_error.hpp
  * @author Nicolás Serrano (serranogarcianicolas@gmail.com)
- * @brief Defines socketError used on any socket operation
+ * @brief Defines SocketError used on any socket operation
  * @version 0.1
  * @date 2026-04-08
  * 
@@ -21,16 +21,16 @@ namespace ninttp
     /**
      * @brief Represents an error in a socket operation
      */
-    struct socketError{
+    struct SocketError{
         using ErrorT = internal::SelectedBackend::ErrorT;
         /**
-         * @brief Builds a socketError instance from an optional context and the location of the caller
+         * @brief Builds a SocketError instance from an optional context and the location of the caller
          * @param context Optional context string
          * @param location Source location of the caller
          * @note it is safe to pass @c nullptr to @p context
          * @details source_location is not specified to be constexpr nor consteval so we can't mark this constructor as such
          */
-        socketError(const ErrorT& err, const std::source_location& location = std::source_location::current()) noexcept
+        SocketError(const ErrorT& err, const std::source_location& location = std::source_location::current()) noexcept
             : err_(err), location_(location){}
 
         /**
