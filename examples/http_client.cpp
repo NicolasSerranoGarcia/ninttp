@@ -4,7 +4,7 @@
 
 void client(){
     ninttp::httpClient client(ninttp::IPv4Endpoint::loopback(8080));
-    client.GET("/");
+    std::cout << client.GET("Hello World!").value().contents << std::endl;
 }
 
 int main(){

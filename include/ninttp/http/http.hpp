@@ -55,39 +55,37 @@ namespace ninttp
             std::expected<void, SocketError> listen(const EndpointT& interf){
                 if(const auto res = list_.bind(interf); !res.has_value())
                     return std::unexpected{res.error()};
-                list_.listen(1);
-                    
+
+                list_.listen(100);
+
                 while(1){
-                    const auto sock = list_.accept();
+                    auto sock = list_.accept();
                     if(!sock.has_value())
                         return std::unexpected{sock.error()};
-                    //std::expected might make copies when returning the value
-                    auto streamSock = std::move(sock.value());
+
+                    auto streamSock = std::move(sock).value();
                     
-                    std::string res(512, '\0');
+                    std::string result;
+                    result.reserve(512);
 
                     char buf[512];
 
-                    std::memset(buf, 0, 512);
-                    
                     for(;;){
+                        std::memset(buf, 0, 512);
                         auto res = streamSock.receive(buf, 
                                     sizeof(buf));
                         if(!res.has_value())
                             return std::unexpected{res.error()};
 
-                        //no more data
-                        if(res.value() == 0)
-                            break;
-
                         int i = 0;
 
                         while(buf[i] != '\0'){
-                            res.contents.push_back(buf[i]);
+                            result.push_back(buf[i]);
                             ++i;
                         }
 
-                        std::memset(buf, 0, 512);
+                        if(result.ends_with("\r\n\r\n"))
+                            break;
                     }
 
                     /*here res would represent the HTTP
@@ -95,8 +93,7 @@ namespace ninttp
                     /*we could do that by encapsulating the info
                     in a Request struct, and together with the Response use it in the callback*/
                     //for now just return whatever the user sent us
-                    std::cout << "Server got: " << res << std::endl;
-                    streamSock.send(res.data(), res.size());
+                    streamSock.send(result.data(), result.size());
                 }
             }
 
@@ -125,24 +122,18 @@ namespace ninttp
 
             //at the moment literally send the resource
             std::expected<Response, SocketError> GET(const std::string& resource){
-                sock_.send(resource.data(), resource.size());
+                std::string msg = resource + std::string("\r\n\r\n");
+                sock_.send(msg.data(), msg.size());
 
                 Response response;
 
-                response.contents.reserve(512);
-
                 char buf[512];
 
-                std::memset(buf, 0, 512);
-
                 for(;;){
+                    std::memset(buf, 0, 512);
                     auto res = sock_.receive(buf, sizeof(buf));
                     if(!res.has_value())
                         return std::unexpected{res.error()};
-
-                    //no more data
-                    if(res.value() == 0)
-                        break;
 
                     int i = 0;
 
@@ -151,7 +142,8 @@ namespace ninttp
                         ++i;
                     }
 
-                    std::memset(buf, 0, 512);
+                    if(response.contents.ends_with("\r\n\r\n"))
+                        break;
                 }
 
                 //here we would need to process the whole response
