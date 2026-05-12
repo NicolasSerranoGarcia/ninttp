@@ -19,6 +19,7 @@
 #include "backends/concepts.hpp"
 #include "../types.hpp"
 #include "../socket_error.hpp"
+#include "socket_state.hpp"
 
 //for future: it may take too long on multithreaded programs to capture errno. For that, we could maybe do a "recordLastError" so that you can presave the
 //error, just for handling it in subsequent steps. The message could be created from this memory, just like getErrMessageFromCapture. This way we avoid
@@ -75,6 +76,7 @@ namespace ninttp::internal
 
             //there is potential leak of resources here, because we are not disposing of the previous state
             SocketCore& operator=(SocketCore&& other) noexcept(std::is_nothrow_move_constructible_v<SocketT> && std::is_nothrow_swappable_v<SocketT>){
+                //the destructor of the temporary left here might return an error but we can't handle it
                 SocketCore(std::move(other)).swap(*this);
                 return *this;
             }
@@ -168,6 +170,7 @@ namespace ninttp::internal
             Domain domain_;
             Service service_;
             Protocol proto_;
+            SocketState state_;
 
             //a combination of acquire and open which would be more error prone
             //for public API. It is only used for child socketClasses (like ListenerSocket) to build

@@ -10,7 +10,6 @@
 
 #include "socket_error.hpp"
 
-
 namespace ninttp
 {
     using SocketBase = ninttp::internal::SocketCore<internal::SelectedBackend>;
@@ -26,6 +25,7 @@ namespace ninttp
             ListenerSocket(Domain domain, Protocol proto)
                 : SocketBase(domain, Service::Stream, proto){}
 
+            //forward some of the methods to the public API
             using SocketBase::close;
             using SocketBase::domain;
             using SocketBase::isOpen;
@@ -118,7 +118,7 @@ namespace ninttp
                     return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
                 }
 
-                endpoint_ = endpoint;
+                peerEndpoint_ = endpoint;
                 return {};
             }
 
@@ -139,6 +139,34 @@ namespace ninttp
                 return got;
             }
 
+            std::expected<std::string, SocketError> receiveUntil(const std::string& end) noexcept{
+                std::string result;
+
+                char buf[256];
+
+                for(;;){
+                    auto res = receive(buf, sizeof(buf));
+
+                    if(!res.has_value())
+                        return std::unexpected{res.error()};
+
+                    if(res.value() == 0)
+                        return result;
+
+                    int i = 0;
+
+                    while(i != res-1){
+                        result.push_back(buf[i]);
+                        ++i;
+                    }
+
+                    if(result.ends_with(end))
+                        break;
+                }
+
+                return result;
+            }
+
         private:
             StreamSocket(
                 typename internal::SelectedBackend::SocketT sock,
@@ -146,9 +174,9 @@ namespace ninttp
                 Service service,
                 Protocol proto,
                 const EndpointT& endpoint) noexcept
-                : SocketBase(sock, domain, service, proto), endpoint_(endpoint){}
+                : SocketBase(sock, domain, service, proto), peerEndpoint_(endpoint){}
 
-            EndpointT endpoint_{};
+            EndpointT peerEndpoint_{};
     };
 
     #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1

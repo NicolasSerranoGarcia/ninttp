@@ -49,31 +49,33 @@ namespace ninttp
             using HandlerT = std::function<void(Request, Response)>;
         
             httpServer()
-                : list_(Domain::IPv4, Protocol::Tcp)
+                : listenerSock_(Domain::IPv4, Protocol::Tcp)
             {}
 
             std::expected<void, SocketError> listen(const EndpointT& interf){
-                if(const auto res = list_.bind(interf); !res.has_value())
-                    return std::unexpected{res.error()};
+                if(const auto bindRes = listenerSock_.bind(interf); !bindRes.has_value())
+                    return std::unexpected{bindRes.error()};
 
-                list_.listen(100);
+                if(const auto listenRes = listenerSock_.listen(MAX_BACKLOG); !listenRes.has_value()){
+                    return std::unexpected{listenRes.error()};
+                }
 
                 while(1){
-                    auto sock = list_.accept();
-                    if(!sock.has_value())
-                        return std::unexpected{sock.error()};
+                    auto acceptRes = listenerSock_.accept();
+                    if(!acceptRes.has_value())
+                        return std::unexpected{acceptRes.error()};
 
-                    auto streamSock = std::move(sock).value();
+                    auto streamSock = std::move(acceptRes).value();
                     
                     std::string result;
-                    result.reserve(512);
 
                     char buf[512];
 
                     for(;;){
                         std::memset(buf, 0, 512);
-                        auto res = streamSock.receive(buf, 
-                                    sizeof(buf));
+
+                        auto res = streamSock.receive(buf, sizeof(buf));
+
                         if(!res.has_value())
                             return std::unexpected{res.error()};
 
@@ -104,7 +106,9 @@ namespace ninttp
 
         private:
             std::unordered_map<std::string, HandlerT> handlers;
-            ListenerSocket<EndpointT, StreamSocket<EndpointT>> list_;
+            ListenerSocket<EndpointT, StreamSocket<EndpointT>> listenerSock_;
+
+            static constinit const int MAX_BACKLOG = 100;
     };
 
     template<typename EndpointT = IPv4Endpoint>
