@@ -120,9 +120,10 @@ set(public_headers
     include/ninttp/nintraits.hpp
     include/ninttp/socket/socket_error.hpp
     include/ninttp/socket/types.hpp
-    include/ninttp/socket/endpoints.hpp
+    include/ninttp/endpoints.hpp
     include/ninttp/socket/socket.hpp
     include/ninttp/socket/internal/select_backend.hpp
+    include/ninttp/socket/internal/socket_state.hpp
     include/ninttp/socket/internal/socket_core.hpp
     include/ninttp/socket/internal/backends/concepts.hpp
     include/ninttp/socket/internal/backends/posix.hpp

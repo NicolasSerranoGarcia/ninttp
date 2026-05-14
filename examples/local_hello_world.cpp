@@ -5,7 +5,7 @@
 #include <exception>
 #include <iostream>
 
-#include "../include/ninttp/socket/endpoints.hpp"
+#include "../include/ninttp/endpoints.hpp"
 #include "../include/ninttp/socket/socket.hpp"
 
 int main(){

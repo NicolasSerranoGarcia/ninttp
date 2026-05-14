@@ -13,7 +13,7 @@
 
 #include "../../types.hpp"
 #include "../../utils.hpp"
-#include "../../endpoints.hpp"
+#include "../../../endpoints.hpp"
 
 namespace ninttp::internal
 {

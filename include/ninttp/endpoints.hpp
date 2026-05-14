@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "../nintraits.hpp"
+#include "nintraits.hpp"
 
 namespace ninttp
 {

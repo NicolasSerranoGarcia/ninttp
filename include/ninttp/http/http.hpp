@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../socket/socket.hpp"
-#include "../socket/endpoints.hpp"
+#include "../endpoints.hpp"
 #include "../socket/types.hpp"
 
 #include <vector>

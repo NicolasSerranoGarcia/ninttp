@@ -6,7 +6,7 @@
 #include <optional>
 #include <string>
 
-#include "../../endpoints.hpp"
+#include "../../../endpoints.hpp"
 #include "../../types.hpp"
 
 namespace ninttp::internal {
