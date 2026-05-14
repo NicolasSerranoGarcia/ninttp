@@ -3,46 +3,18 @@
 #include "../socket/socket.hpp"
 #include "../endpoints.hpp"
 #include "../socket/types.hpp"
+#include "internal/http_request_parser.hpp"
+#include "types.hpp"
 
 #include <vector>
 #include <unordered_map>
 #include <functional>
-#include <optional>
-
-namespace ninttp::internal{
-    enum class HTTPVerb{
-        GET,
-        PUT,
-        //DELETE,
-        PATCH,
-    };
-
-    struct Header{
-        std::string key;
-        std::string value;
-    };
-} // namespace ninttp::internal
+#include <expected>
 
 namespace ninttp
 {
-
-    struct Response{
-        bool ok;
-        std::optional<int> errCode;
-        std::vector<internal::Header> headers;
-        std::string contents;
-        //...
-    };
-
-    struct Request{
-        std::vector<internal::Header> headers;
-        internal::HTTPVerb operation;
-        std::string resource;
-        //...
-    };
-
     //1.0
-    template<typename EndpointT = IPv4Endpoint>
+    template<httpVersion ver = httpVersion::_1_0, typename EndpointT = IPv4Endpoint>
     class httpServer{
         public:
 
