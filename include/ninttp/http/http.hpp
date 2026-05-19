@@ -14,7 +14,7 @@
 namespace ninttp
 {
     //1.0
-    template<httpVersion ver = httpVersion::_1_0, typename EndpointT = IPv4Endpoint>
+    template<httpVersion ver = http_1_0, typename EndpointT = IPv4Endpoint>
     class httpServer{
         public:
 
