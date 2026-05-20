@@ -68,40 +68,46 @@ namespace ninttp::internal
                         return std::nullopt;
                     }
 
-                    //processes headers but does not search for the space of the end of headers
+                    //processes headers but does not search for the end of headers
                     case CurState::Headers:{
+                        size_t headerEnd;
                         //this is not correct bc finding it does not mean we have processed all the remaining headers
-                        //bool isLastHeader = false;
-                        //if(constructed.find_first_of("\r\n\r\n", lastProcessedIdx) != std::string::npos)
-                        //    isLastHeader == true;
-
-                        size_t lineEnd;
-                        if(lineEnd = constructed.find_first_of("\r\n", lastProcessedIdx); lineEnd == std::string::npos)
+                        if(headerEnd = constructed.find_first_of("\r\n\r\n", lastProcessedIdx); headerEnd == std::string::npos)
                             return std::nullopt;
 
-                        //header is between lastProcessedIdx and lineEnd
-                        auto colon = constructed.find(':', lastProcessedIdx);
+                        while(lastProcessedIdx != headerEnd){
+                            size_t lineEnd;
+                            //we process all headers so only the last one 
+                            if(lineEnd = constructed.find_first_of("\r\n", lastProcessedIdx); lineEnd == std::string::npos)
+                                return std::nullopt;
 
-                        assert(colon != std::string::npos);
+                            //header is between lastProcessedIdx and lineEnd
+                            auto colon = constructed.find(':', lastProcessedIdx);
 
-                        internal::Header header;
+                            assert(colon != std::string::npos);
 
-                        while(lastProcessedIdx != colon){
-                            header.key += constructed[lastProcessedIdx];
-                            lastProcessedIdx++;
+                            internal::Header header;
+
+                            while(lastProcessedIdx != colon){
+                                header.key += constructed[lastProcessedIdx];
+                                lastProcessedIdx++;
+                            }
+                            //must have processed until lastProcessedIdx == colon
+                            assert(lastProcessedIdx < lineEnd);
+
+                            if(constructed[lastProcessedIdx+1] == ' ')
+                                lastProcessedIdx++;
+
+                            while(lastProcessedIdx != lineEnd){
+                                header.value += constructed[lastProcessedIdx];
+                                lastProcessedIdx++;
+                            }
+
+                            //here we need to sum 2 to lastProccessedIdx to account for the \r\n
+
+                            request.headers.push_back(std::move(header));
+                            
                         }
-                        //must have processed until lastProcessedIdx == colon
-                        assert(lastProcessedIdx < lineEnd);
-
-                        if(constructed[lastProcessedIdx+1] == ' ')
-                            lastProcessedIdx++;
-
-                        while(lastProcessedIdx != lineEnd){
-                            header.value += constructed[lastProcessedIdx];
-                            lastProcessedIdx++;
-                        }
-
-                        request.headers.push_back(std::move(header));
                     }
 
                 }
