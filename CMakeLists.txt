@@ -128,6 +128,9 @@ set(public_headers
     include/ninttp/socket/internal/backends/concepts.hpp
     include/ninttp/socket/internal/backends/posix.hpp
     include/ninttp/socket/internal/backends/winsock.hpp
+    include/ninttp/http/http.hpp
+    include/ninttp/http/types.hpp
+    include/ninttp/http/internal/http_request_parser.hpp
 )
 
 # groups have to match the location in which they are
