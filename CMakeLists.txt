@@ -120,6 +120,7 @@ set(public_headers
     include/ninttp/nintraits.hpp
     include/ninttp/socket/socket_error.hpp
     include/ninttp/socket/types.hpp
+    include/ninttp/socket/utils.hpp
     include/ninttp/endpoints.hpp
     include/ninttp/socket/socket.hpp
     include/ninttp/socket/internal/select_backend.hpp
@@ -130,7 +131,10 @@ set(public_headers
     include/ninttp/socket/internal/backends/winsock.hpp
     include/ninttp/http/http.hpp
     include/ninttp/http/types.hpp
+    include/ninttp/http/internal/http_request_builder.hpp
     include/ninttp/http/internal/http_request_parser.hpp
+    include/ninttp/http/internal/http_response_builder.hpp
+    include/ninttp/http/internal/http_response_parser.hpp
 )
 
 # groups have to match the location in which they are

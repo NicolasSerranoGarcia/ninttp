@@ -18,10 +18,10 @@ namespace ninttp::internal
 
     //uses builder pattern to craft a Request object that can be retrieved when a packet is completed
     template<httpVersion ver = http_1_0>
-    class httpRequestParser{
+    class httpResponseParser{
 
         enum class Processing{
-            RequestLine,
+            StatusLine,
             Headers,
             Body,
             Finished
@@ -36,7 +36,7 @@ namespace ninttp::internal
                 constructed.append(received);
                 switch(state){
                     //first time parsing. Store until we find CRLF and then process once
-                    case Processing::RequestLine:{
+                    case Processing::StatusLine:{
                         std::istringstream ss(received);
                         size_t lineEnd;
                         if(lineEnd = constructed.find("\r\n"); lineEnd != std::string::npos)
@@ -86,7 +86,7 @@ namespace ninttp::internal
 
                         //all that's next is only executed once due to the Headers having ended and therefore the state changing also
 
-                        //there are no headers. As we delayed the +2 from the RequestLine we must do double here
+                        //there are no headers. As we delayed the +2 from the StatusLine we must do double here
                         if(lastProcessedIdx == headerEnd){
                             lastProcessedIdx += 4; // to account for the double CRLF
                             state = Processing::Body; // TODO: check the whole state machine bc this might not be correct at all
@@ -177,27 +177,18 @@ namespace ninttp::internal
                 return state == Processing::Finished;
             }
 
-            Request getRequest() noexcept{
+            Request getResponse() noexcept{
                 assert(state == Processing::Finished);
-                clear();
                 return std::move(request); //TODO: check the move constructor of Request and assert it leaves it as the default constructor (invalid)
             }
 
         private:
 
-            void reset() noexcept{
-                constructed.clear();
-                lastProcessedIdx = -1;
-                bodySize = -1;
-                state = Processing::RequestLine;
-            }
-
             std::string constructed;
             std::ptrdiff_t lastProcessedIdx = -1;
             //synced with the constructed string as new info gets received
-            //TODO: assert this has a move constructor that leaves the object in it's original state, or at least a clear method
             Request request;
             std::ptrdiff_t bodySize = -1; // maybe use something bigger in the future?
-            Processing state = Processing::RequestLine;
+            Processing state = Processing::StatusLine;
     };
 } // namespace ninttp::internal

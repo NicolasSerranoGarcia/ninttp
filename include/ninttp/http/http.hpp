@@ -4,6 +4,7 @@
 #include "../endpoints.hpp"
 #include "../socket/types.hpp"
 #include "internal/http_request_parser.hpp"
+#include "internal/http_response_parser.hpp"
 #include "internal/http_response_builder.hpp"
 #include "types.hpp"
 
@@ -11,6 +12,8 @@
 #include <unordered_map>
 #include <functional>
 #include <expected>
+#include <optional>
+#include <utility>
 
 namespace ninttp
 {
@@ -19,26 +22,29 @@ namespace ninttp
     class httpServer{
         public:
 
-            using HandlerT = std::function<void(Request, Response&)>;
+            using GetHandlerT = std::function<void(Response&)>;
         
             httpServer()
                 : listenerSock_(Domain::IPv4, Protocol::Tcp)
             {}
 
-            std::expected<void, SocketError> listen(const EndpointT& interf){
-                if(const auto bindRes = listenerSock_.bind(interf); !bindRes.has_value())
-                    return std::unexpected{bindRes.error()};
+            std::optional<SocketError> listen(const EndpointT& interf){
+                if(auto bindRes = listenerSock_.bind(interf); !bindRes.has_value())
+                    return std::move(bindRes.error());
 
-                if(const auto listenRes = listenerSock_.listen(MAX_BACKLOG); !listenRes.has_value()){
-                    return std::unexpected{listenRes.error()};
+                if(auto listenRes = listenerSock_.listen(MAX_BACKLOG); !listenRes.has_value()){
+                    return std::move(listenRes.error());
                 }
 
-                internal::httpRequestParser parser;
 
                 while(1){
+
+                    //GHLT: at the very least the append method does parse the entirety of a request packet
+                    internal::httpRequestParser parser;
+
                     auto acceptRes = listenerSock_.accept();
                     if(!acceptRes.has_value())
-                        return std::unexpected{acceptRes.error()};
+                        return std::move(acceptRes.error());
 
                     auto streamSock = std::move(acceptRes).value();
 
@@ -50,7 +56,7 @@ namespace ninttp
                         auto res = streamSock.receive(buf, sizeof(buf));
 
                         if(!res.has_value())
-                            return std::unexpected{res.error()};
+                            return std::move(res.error());
 
                         size_t read = res.value();
 
@@ -65,35 +71,52 @@ namespace ninttp
                         got.clear();
                     }
 
+                    //assert getRequest leaves the internal Request defaulted
                     auto request = parser.getRequest();
+
+                    //Depending on the request we might need to modify state, and at the end send the response
 
                     //we need to send the response. Essentially, we want to do a transformation of the Request into the response.
                     // The callback, if specified, for the resource that Response holds is the transformer of our request into the Response.
                     //this transformation is specified by the user, that specifies what to do depending on the resource.
                     //the interface should be 
 
+                    //GHLT: we need to set the invariants about how the listener socket works with stream sockets. 
+                    //do we use IPC or other threads when accepting a connection?
+
                     Response response;
 
                     //use contains bc we dont want to create the resource
-                    if(handlers.contains(request.resource))
-                        handlers[request.resource](std::move(request), response);
+                    //GHLT: this probably also triggers 404 or other depending on permissions
+                    //the error message shall be returned to the client
+                    if(getHandlers.contains(request.resource)){
 
-                    auto responseStr = internal::httpResponseBuilder::fromResponseObject(response);
-
-                    //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
-                    //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
-                    streamSock.send(responseStr.data(), responseStr.size());
+                        //TODO allow only a handful of operations over the response object. For example, setting the contents,
+                        //setting a header maybe? and so. The rest is constructed by the response builder
+                        //this would be implemented by making the contents of response private, maybe friending the builders
+                        //and creating two methods like setContent and setHeader(). For the moment the most reasonable is letting only 
+                        //setContent because set headers might have many side effects and I don't know if it would be useful for the user
+                        getHandlers[request.resource](response);
+                        
+                        auto responseStr = internal::httpResponseBuilder::fromResponseObject(response);
+                        
+                        //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
+                        //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
+                        streamSock.send(responseStr.data(), responseStr.size());
+                    }
                 }
+
+                return std::nullopt;
             }
 
-            void doGET(const std::string& resource, HandlerT callback){
-                /*TODO: validate resource*/
-                handlers[resource] = callback;
+            void doGET(const std::string& resource, GetHandlerT callback){
+                /*TODO: validate resource is not malicious and so*/
+                getHandlers[resource] = callback;
             }
 
         private:
             //this is only thought for GET. We nee da reliable way to store the callbacks and so because not all methods need the same treatment
-            std::unordered_map<std::string, HandlerT> handlers;
+            std::unordered_map<std::string, GetHandlerT> getHandlers;
             ListenerSocket<EndpointT, StreamSocket<EndpointT>> listenerSock_;
 
             static constinit const int MAX_BACKLOG = 100;
@@ -117,29 +140,32 @@ namespace ninttp
                 std::string msg = resource + std::string("\r\n\r\n");
                 streamSock_.send(msg.data(), msg.size());
 
-                Response response;
+                std::string got;
 
                 char buf[512];
 
-                for(;;){
+                internal::httpResponseParser parser;
+
+                while(!parser.finished()){
                     auto res = streamSock_.receive(buf, sizeof(buf));
+
                     if(!res.has_value())
                         return std::unexpected{res.error()};
 
-                    size_t got = res.value();
+                    size_t read = res.value();
 
-                    if(got == 0)
+                    if(read == 0)
                         break;
 
-                    for(size_t i = 0; i < got; ++i)
-                        response.contents.push_back(buf[i]);
+                    for(int i = 0; i < read; ++i)
+                        got.push_back(buf[i]);
 
-                    if(response.contents.ends_with("\r\n\r\n"))
-                        break;
+                    parser.append(got);
+                    got.clear();
                 }
 
                 //here we would need to process the whole response
-                return response;
+                return parser.getResponse();
             }
 
         private:
