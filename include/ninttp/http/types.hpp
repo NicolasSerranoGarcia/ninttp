@@ -52,7 +52,7 @@ namespace ninttp
             return std::string("HTTP/") + toString();
         }
 
-        httpVersion() = delete;
+        httpVersion() noexcept = default;
         uint8_t major;
         uint8_t minor;
     };
@@ -138,6 +138,20 @@ namespace ninttp
         std::optional<std::string> body;
         //...
     };
+
+    inline std::ostream& operator<<(std::ostream& os, const Response& response){
+        os << response.version.toHeaderString() << ' '
+           << response.statusCode << ' '
+           << getReadableStatus(response.statusCode) << '\n';
+
+        for(const auto& header : response.headers)
+            os << header.key << ": " << header.value << '\n';
+
+        if(response.body.has_value())
+            os << '\n' << response.body.value();
+
+        return os;
+    }
 
     //maybe wire the interfaces to only use this. For example, addHeader and so, then request builder would not be needed semantically
     struct Request{

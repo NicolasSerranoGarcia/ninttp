@@ -32,10 +32,8 @@ namespace ninttp
                 if(auto bindRes = listenerSock_.bind(interf); !bindRes.has_value())
                     return std::move(bindRes.error());
 
-                if(auto listenRes = listenerSock_.listen(MAX_BACKLOG); !listenRes.has_value()){
+                if(auto listenRes = listenerSock_.listen(MAX_BACKLOG); !listenRes.has_value())
                     return std::move(listenRes.error());
-                }
-
 
                 while(1){
 
@@ -97,9 +95,9 @@ namespace ninttp
                         //and creating two methods like setContent and setHeader(). For the moment the most reasonable is letting only 
                         //setContent because set headers might have many side effects and I don't know if it would be useful for the user
                         getHandlers[request.resource](response);
-                        
+
                         auto responseStr = internal::httpResponseBuilder::fromResponseObject(response);
-                        
+
                         //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
                         //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
                         streamSock.send(responseStr.data(), responseStr.size());
@@ -122,7 +120,7 @@ namespace ninttp
             static constinit const int MAX_BACKLOG = 100;
     };
 
-    template<typename EndpointT = IPv4Endpoint>
+    template<httpVersion ver = http_1_0, typename EndpointT = IPv4Endpoint>
     class httpClient{
         public:
 
@@ -135,10 +133,12 @@ namespace ninttp
                     throw res.error();
             }
 
-            //at the moment literally send the resource
+            //TODO: validate resource for syntax or disallowed characters
             std::expected<Response, SocketError> GET(const std::string& resource){
-                std::string msg = resource + std::string("\r\n\r\n");
-                streamSock_.send(msg.data(), msg.size());
+                std::string request = std::string("GET ") + resource + std::string(" ") +
+                                    ver.toHeaderString() + std::string("\r\nContent-Length: ") + 
+                                    std::to_string(resource.size()) + std::string("\r\n\r\n") + resource;
+                streamSock_.send(request.data(), request.size());
 
                 std::string got;
 
@@ -146,19 +146,24 @@ namespace ninttp
 
                 internal::httpResponseParser parser;
 
+                
                 while(!parser.finished()){
                     auto res = streamSock_.receive(buf, sizeof(buf));
-
+                    
                     if(!res.has_value())
                         return std::unexpected{res.error()};
-
+                    
                     size_t read = res.value();
-
+                        
                     if(read == 0)
                         break;
 
+                    std::cout << "Hola" << std::endl;
+
                     for(int i = 0; i < read; ++i)
                         got.push_back(buf[i]);
+
+                    std::cout << got << std::endl;
 
                     parser.append(got);
                     got.clear();

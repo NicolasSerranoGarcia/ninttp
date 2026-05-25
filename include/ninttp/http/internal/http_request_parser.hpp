@@ -6,15 +6,12 @@
 #include <optional>
 #include <cassert>
 
+#include "http_parse_error.hpp"
 #include "../types.hpp"
 
 
 namespace ninttp::internal
 {
-
-    struct httpParseError{
-        std::string what;
-    };
 
     //uses builder pattern to craft a Request object that can be retrieved when a packet is completed
     template<httpVersion ver = http_1_0>
@@ -42,23 +39,25 @@ namespace ninttp::internal
                         if(lineEnd = constructed.find("\r\n"); lineEnd != std::string::npos)
                             return std::nullopt;
 
-                        std::string verb;
+                        std::string verbStr;
                         std::string version;
                         //this is incorrect bc we are not assured the whole line has been sent. We should store in a buffer until we see the CRLF
-                        ss >> verb >> request.resource >> version;
+                        ss >> verbStr >> request.resource >> version;
 
                         //for now return an error but we could simply ignore the message bc it is not malformed if it is a different supported version
                         if(auto v = httpVersion::fromRequestLine(version); !v.has_value() || v.value().major != ver.major)
-                            return std::make_optional(httpParseError{"Cannot parse version " + version + 
-                                                    " with the specified version " + ver.toString()});
+                            return httpParseError{std::string("Cannot parse version ") + version + 
+                                                    std::string(" with the specified version ") + ver.toString()};
 
-                        for(const auto v : all_verbs){
-                            if(httpVerbStr[static_cast<const int>(v)] == verb)
-                                request.op = v;
+                        //TODO: assert if the server should return response as it's version even if the client is of another minor.
+
+                        for(const auto verb : all_verbs){
+                            if(std::string(httpVerbStr[static_cast<const int>(verb)]) == verbStr)
+                                request.op = verb;
                         }
 
                         if(request.op == httpMethod::INVALID)
-                            return std::make_optional(httpParseError{"Unrecognized method: " + verb});
+                            return httpParseError{std::string("Unrecognized method: ") + verbStr};
 
                         //must not return npos and we should have moved to the next line
                         lastProcessedIdx = lineEnd;
@@ -157,6 +156,7 @@ namespace ninttp::internal
                     }
 
                     case Processing::Body:{
+
                         //we start at the next character of the CRLF that separates the headers and body
                     
                         if(constructed.size() - lastProcessedIdx < bodySize)
@@ -168,6 +168,9 @@ namespace ninttp::internal
                         state = Processing::Finished;
                         return std::nullopt;
                     }
+
+                    default:
+                        break;
                 }
 
                 return std::nullopt;
@@ -179,7 +182,7 @@ namespace ninttp::internal
 
             Request getRequest() noexcept{
                 assert(state == Processing::Finished);
-                clear();
+                reset();
                 return std::move(request); //TODO: check the move constructor of Request and assert it leaves it as the default constructor (invalid)
             }
 
