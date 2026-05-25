@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "../include/ninttp/http/http.hpp"
+#include "../include/ninttp/http/http_client.hpp"
 
 void client(){
     ninttp::httpClient client(ninttp::IPv4Endpoint::loopback(8080));

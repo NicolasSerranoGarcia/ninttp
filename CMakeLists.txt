@@ -129,7 +129,8 @@ set(public_headers
     include/ninttp/socket/internal/backends/concepts.hpp
     include/ninttp/socket/internal/backends/posix.hpp
     include/ninttp/socket/internal/backends/winsock.hpp
-    include/ninttp/http/http.hpp
+    include/ninttp/http/http_client.hpp
+    include/ninttp/http/http_server.hpp
     include/ninttp/http/types.hpp
     include/ninttp/http/internal/http_request_builder.hpp
     include/ninttp/http/internal/http_request_parser.hpp
