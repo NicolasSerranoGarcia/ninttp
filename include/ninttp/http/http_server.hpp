@@ -13,6 +13,7 @@
 #include <expected>
 #include <optional>
 #include <utility>
+#include <iostream>
 
 namespace ninttp
 {
@@ -57,16 +58,21 @@ namespace ninttp
 
                         size_t read = res.value();
 
-                        if(read == 0)
+                        if(read == 0){
+                            std::clog << "[http.server] sender sent 0\n";
                             break;
+                        }
 
                         for(int i = 0; i < read; ++i)
                             got.push_back(buf[i]);
 
+                        std::clog << "[http.server] received " << got.size() << " bytes:\n" << got << '\n';
                         //for now the dirtiest way is to pass got and then clear. It wastes a lot of time but just works
                         parser.append(got);
                         got.clear();
                     }
+
+                    std::clog << "[http.server] request parser finished\n";
 
                     //assert getRequest leaves the internal Request defaulted
                     auto request = parser.getRequest();
@@ -102,6 +108,9 @@ namespace ninttp
                         streamSock.send(responseStr.data(), responseStr.size());
                     }
                 }
+
+                std::clog << "[http.server] listen loop exited\n";
+
 
                 return std::nullopt;
             }

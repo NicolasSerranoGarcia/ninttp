@@ -10,6 +10,7 @@
 #include <vector>
 #include <expected>
 #include <utility>
+#include <iostream>
 
 namespace ninttp
 {
@@ -28,9 +29,10 @@ namespace ninttp
 
             //TODO: validate resource for syntax or disallowed characters
             std::expected<Response, SocketError> GET(const std::string& resource){
+                //TODO: move to request builder and research for header architecture
+                //Use string views and spans for interrfaces
                 std::string request = std::string("GET ") + resource + std::string(" ") +
-                                    ver.toHeaderString() + std::string("\r\nContent-Length: ") + 
-                                    std::to_string(resource.size()) + std::string("\r\n\r\n") + resource;
+                                    ver.toHeaderString() + std::string("\r\n\r\n");
                 streamSock_.send(request.data(), request.size());
 
                 std::string got;
@@ -39,24 +41,24 @@ namespace ninttp
 
                 internal::httpResponseParser parser;
 
-                
                 while(!parser.finished()){
                     auto res = streamSock_.receive(buf, sizeof(buf));
+
+                    std::clog << "[http.client] receive returned\n";
                     
                     if(!res.has_value())
                         return std::unexpected{res.error()};
                     
-                    size_t read = res.value();
-                        
-                    if(read == 0)
-                        break;
+                        size_t read = res.value();
 
-                    std::cout << "Hola" << std::endl;
+                    if(read == 0){
+                        break;
+                    }
 
                     for(int i = 0; i < read; ++i)
                         got.push_back(buf[i]);
 
-                    std::cout << got << std::endl;
+                    std::clog << "[http.client] received " << got.size() << " bytes:\n" << got << '\n';
 
                     parser.append(got);
                     got.clear();
