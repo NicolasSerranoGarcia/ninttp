@@ -49,6 +49,7 @@ namespace ninttp
                     std::string got;
 
                     char buf[512];
+                    bool parseFailed = false;
 
                     while(!parser.finished()){
                         auto res = streamSock.receive(buf, sizeof(buf));
@@ -68,9 +69,24 @@ namespace ninttp
 
                         std::clog << "[http.server] received " << got.size() << " bytes:\n" << got << '\n';
                         //for now the dirtiest way is to pass got and then clear. It wastes a lot of time but just works
-                        parser.append(got);
+                        auto parseRes = parser.append(got);
                         got.clear();
+
+                        if(!parseRes.has_value()){
+                            std::clog << "[http.server] request parse error: " << parseRes.error().what << '\n';
+                            parseFailed = true;
+                            break;
+                        }
+
+                        if(*parseRes == internal::httpParseStatus::Done){
+                            assert(parser.finished());
+                            break;
+                        }
                     }
+                    
+
+                    if(parseFailed)
+                        continue;
 
                     std::clog << "[http.server] request parser finished\n";
 
@@ -101,11 +117,21 @@ namespace ninttp
                         //setContent because set headers might have many side effects and I don't know if it would be useful for the user
                         getHandlers[request.resource](response);
 
+                        response.version = ver;
+                        response.statusCode = 200;
+
+                        if(response.body.has_value() && !response.body->empty()){
+                            response.headers.push_back(internal::Header{ .key = std::string("Content-Length"), 
+                                                                         .value = std::to_string(response.body->size())});
+                        }
+
                         auto responseStr = internal::httpResponseBuilder::fromResponseObject(response);
 
                         //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
                         //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
                         streamSock.send(responseStr.data(), responseStr.size());
+                    } else{
+                        //send a 404
                     }
                 }
 
