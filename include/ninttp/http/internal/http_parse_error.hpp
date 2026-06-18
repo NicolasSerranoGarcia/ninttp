@@ -4,6 +4,11 @@
 
 namespace ninttp::internal
 {
+    enum class httpParseStatus{
+        NeedData,
+        Done
+    };
+
     struct httpParseError{
         std::string what;
     };

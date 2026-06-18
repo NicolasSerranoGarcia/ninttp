@@ -4,7 +4,7 @@
 #include <iostream>
 #include <stdexcept>
 
-#include <ninttp/socket/endpoints.hpp>
+#include <ninttp/endpoints.hpp>
 #include <ninttp/socket/internal/select_backend.hpp>
 #include <ninttp/socket/utils.hpp>
 

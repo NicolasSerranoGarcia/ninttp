@@ -51,9 +51,10 @@ namespace ninttp
                     
                         size_t read = res.value();
 
-                    if(read == 0){
-                        break;
-                    }
+                        if(read == 0){
+                            std::clog << "[http.client] sender sent 0\n";
+                            break;
+                        }
 
                     for(int i = 0; i < read; ++i)
                         got.push_back(buf[i]);

@@ -159,7 +159,7 @@ namespace ninttp
         std::string resource;
         httpVersion version; //maybe for semantic completeness?
         std::vector<internal::Header> headers;
-        std::string body;
+        std::optional<std::string> body;
 
         void clear() noexcept{
             op = internal::httpMethod::INVALID;
@@ -195,8 +195,8 @@ namespace ninttp
         for(const auto& header : request.headers)
             os << header.key << ": " << header.value << '\n';
 
-        if(!request.body.empty())
-            os << '\n' << request.body;
+        if(request.body.has_value())
+            os << '\n' << request.body.value();
 
         return os;
     }

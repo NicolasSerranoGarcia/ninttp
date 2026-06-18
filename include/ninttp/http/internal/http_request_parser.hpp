@@ -14,11 +14,6 @@
 namespace ninttp::internal
 {
 
-    enum class httpParseStatus{
-        NeedData,
-        Done
-    };
-
     //uses builder pattern to craft a Request object that can be retrieved when a packet is completed
     template<httpVersion ver = http_1_0>
     class httpRequestParser{
@@ -52,6 +47,9 @@ namespace ninttp::internal
                             std::string version;
                             //this is incorrect bc we are not assured the whole line has been sent. We should store in a buffer until we see the CRLF
                             ss >> verbStr >> request.resource >> version;
+
+                            if(!ss)
+                                return std::unexpected{httpParseError{std::string("Malformed request line")}};
 
                             //for now return an error but we could simply ignore the message bc it is not malformed if it is a different supported version
                             if(auto v = httpVersion::fromRequestLine(version); !v.has_value() || v.value().major != ver.major)
@@ -114,6 +112,7 @@ namespace ninttp::internal
                             while(lastProcessedIdx < headerEnd){
                                 size_t lineEnd;
                                 
+                                //TODO: NeedData returns are really calling for coroutines
                                 if(lineEnd = constructed.find("\r\n", lastProcessedIdx); lineEnd == std::string::npos)
                                     return httpParseStatus::NeedData;
 
@@ -180,8 +179,10 @@ namespace ninttp::internal
                             if(constructed.size() - lastProcessedIdx < bodySize)
                                 return httpParseStatus::NeedData;
 
+                            request.body.emplace();
+                                
                             for(int i = 0; i != bodySize; i++)
-                                request.body += constructed[lastProcessedIdx + i];
+                                request.body->push_back(constructed[lastProcessedIdx + i]);
                             
                             std::clog << "[http.request_parser] state=Body -> Finished\n";
 
