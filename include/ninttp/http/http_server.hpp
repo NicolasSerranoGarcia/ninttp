@@ -37,6 +37,18 @@ namespace ninttp
 
                 while(1){
 
+                    //parse saved sockets from previous clients before trying to accept
+                    // for(auto& s : clientSockets_){
+                    //     if(!s.isUsable()){
+                    //         //probably dispose of it or handle it
+                    //     }
+                        
+                    //     //here we would need to check if it blocks
+                    //     //TODO: also, if they are not spread out into their own programs or threads, this would need a pq or ordering for priority of connections
+                    //     //at the moment we will just receive some
+
+                    // }
+
                     //GHLT: at the very least the append method does parse the entirety of a request packet
                     internal::httpRequestParser parser;
 
@@ -44,7 +56,9 @@ namespace ninttp
                     if(!acceptRes.has_value())
                         return std::move(acceptRes.error());
 
-                    auto streamSock = std::move(acceptRes).value();
+                    clientSockets_.push_back(std::move(acceptRes).value());
+
+                    auto& streamSock = clientSockets_[clientSockets_.size()-1];
 
                     std::string got;
 
@@ -83,10 +97,11 @@ namespace ninttp
                             break;
                         }
                     }
-                    
 
-                    if(parseFailed)
+                    if(parseFailed){
+                        //we could maybe check for streamSock state
                         continue;
+                    }
 
                     std::clog << "[http.server] request parser finished\n";
 
@@ -150,6 +165,8 @@ namespace ninttp
             //this is only thought for GET. We nee da reliable way to store the callbacks and so because not all methods need the same treatment
             std::unordered_map<std::string, GetHandlerT> getHandlers;
             ListenerSocket<EndpointT, StreamSocket<EndpointT>> listenerSock_;
+
+            std::vector<StreamSocket<EndpointT>> clientSockets_;
 
             static constinit const int MAX_BACKLOG = 100;
     };

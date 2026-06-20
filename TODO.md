@@ -2,3 +2,5 @@
 - Finish basic version of the parsers and builders
 - tests for all types of http messages: malformed, methods, combinations of options...
 - change interface to use span, modules and maybe threads, coroutines or IPC.
+- Do not use socketError to notify of a http error
+- 

@@ -25,7 +25,7 @@ namespace ninttp::internal{
                 responseStr += "\r\n";
 
                 for(const auto& header : response.headers){
-                    responseStr += header.key + std::string(": ") + header.value;
+                    responseStr += header.key + std::string(": ") + header.value + std::string("\r\n");
                 }
 
                 responseStr += "\r\n";

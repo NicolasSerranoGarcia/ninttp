@@ -61,8 +61,16 @@ namespace ninttp
 
                     std::clog << "[http.client] received " << got.size() << " bytes:\n" << got << '\n';
 
-                    parser.append(got);
+                    auto parseRes = parser.append(got);
                     got.clear();
+
+                    if(!parseRes.has_value())
+                        std::clog << parseRes.error().what << std::endl;
+
+                    if(*parseRes == internal::httpParseStatus::Done){
+                        assert(parser.finished());
+                        break;
+                    }
                 }
 
                 //here we would need to process the whole response
