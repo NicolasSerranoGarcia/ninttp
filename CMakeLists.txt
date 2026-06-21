@@ -44,7 +44,7 @@ option(NINTTP_BUILD_EXAMPLES "Build ninttp examples" OFF)
 
 # automatically set depending on if the project is being called as a subproject
 # (in that case there is usually no need for an installation target)
-option(ninttp_INSTALL "Generate target for installing ninttp" ${is_top_level})
+option(NINTTP_INSTALL "Generate target for installing ninttp" ${is_top_level})
 
 SET_IF_UNDEFINED(ninttp_INSTALL_CMAKEDIR
     "${CMAKE_INSTALL_LIBDIR}/cmake/ninttp-${PROJECT_VERSION}" CACHE STRING
@@ -174,7 +174,7 @@ target_compile_features(ninttp
 )
 
 # INSTALL TARGET - haven't gotten into depth with this part. I view it as kind of a default boilerplate
-if(ninttp_INSTALL)
+if(NINTTP_INSTALL)
 
     configure_package_config_file(cmake/ninttp-config.cmake.in
         "${CMAKE_CURRENT_BINARY_DIR}/ninttp-config.cmake"
