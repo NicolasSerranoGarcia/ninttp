@@ -7,6 +7,7 @@
 #include "internal/http_request_builder.hpp"
 #include "types.hpp"
 
+#include <array>
 #include <vector>
 #include <expected>
 #include <utility>
@@ -33,16 +34,16 @@ namespace ninttp
                 //Use string views and spans for interrfaces
                 std::string request = std::string("GET ") + resource + std::string(" ") +
                                     ver.toHeaderString() + std::string("\r\n\r\n");
-                streamSock_.send(request.data(), request.size());
+                streamSock_.send(request);
 
                 std::string got;
 
-                char buf[512];
+                std::array<char, 512> buf{};
 
                 internal::httpResponseParser parser;
 
                 while(!parser.finished()){
-                    auto res = streamSock_.receive(buf, sizeof(buf));
+                    auto res = streamSock_.receive(buf);
 
                     std::clog << "[http.client] receive returned\n";
                     

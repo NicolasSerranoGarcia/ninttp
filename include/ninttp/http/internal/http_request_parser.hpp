@@ -3,6 +3,7 @@
 #include <string>
 #include <cstddef>
 #include <sstream>
+#include <stdexcept>
 #include <optional>
 #include <expected>
 #include <cassert>
@@ -119,7 +120,8 @@ namespace ninttp::internal
                                 //header is between lastProcessedIdx and lineEnd
                                 auto colon = constructed.find(':', lastProcessedIdx);
 
-                                assert(colon != std::string::npos);
+                                if(colon == std::string::npos)
+                                    return std::unexpected{httpParseError{ .what = "Malformed http packet"}};
 
                                 internal::Header header;
 
@@ -152,12 +154,33 @@ namespace ninttp::internal
 
                             //maybe we can use a map for faster access but generally there are very little headers and user
                             //can get a vector?
-                            for(const auto& header : request.headers)
-                                if(header.key == std::string("Content-Length"))
+                            for(const auto& header : request.headers){
+                                if(header.key != std::string("Content-Length"))
+                                    continue;
+
+                                try{
                                     bodySize = std::stoi(header.value);
+                                } catch(std::invalid_argument& inv){
+                                    return std::unexpected{
+                                        httpParseError{ .what = std::string{"Expected valid Content-Length, given "} + header.value}
+                                    };
+                                } catch(std::out_of_range& r){
+                                    return std::unexpected{
+                                        httpParseError{ .what = "Content-Length field exceeds allowed range"};
+                                    };
+                                }
+
+                                break;
+                            }
+
+                            if(bodySize < 0){
+                                return std::unexpected{
+                                    httpParseError{ .what = std::string{"Expected Content-Length field to be non-negative, given "} + header.value}
+                                };
+                            }
 
                             //no body so the message is complete
-                            if(bodySize == -1 || bodySize == 0){
+                            if(bodySize == 0){
                                 state = Processing::Finished;
                                 return httpParseStatus::Done;
                             }

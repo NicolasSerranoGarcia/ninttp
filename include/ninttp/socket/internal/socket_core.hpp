@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <expected>
 #include <iostream> //for std::cerr on SocketCore destructor
 #include <type_traits>
@@ -39,11 +40,11 @@ namespace ninttp::internal
         public:
             using SocketT = typename BackendT::SocketT;
 
-            static_assert(std::swappable<SocketT>, "SocketT must be swappable");
-            static_assert(std::is_move_constructible_v<SocketT>, "SocketT must be move constructible");
-            static_assert(std::is_move_assignable_v<SocketT>, "SocketT must be move assignable");
+            static_assert(std::is_nothrow_swappable_v<SocketT>, "SocketT must be nothrow swappable");
+            static_assert(std::is_nothrow_move_constructible_v<SocketT>, "SocketT must be nothrow move constructible");
+            static_assert(std::is_nothrow_move_assignable_v<SocketT>, "SocketT must be nothrow move assignable");
 
-            //for concurrency, init of the backend can be done with call_once
+            //does not start a local descriptor, just like std::thread does
             constexpr SocketCore() noexcept
                 : domain_(Domain::Invalid), service_(Service::Invalid), proto_(Protocol::Invalid), handle_(BackendT::invalidSocket())
             {
@@ -61,27 +62,27 @@ namespace ninttp::internal
                 #endif
 
                 handle_ = BackendT::openSocket(d, s, p);
-                if(!BackendT::isValidSocket(handle_))
+                if(!BackendT::isUsableSocket(handle_))
                     throw SocketError{BackendT::getLastError()};
             }
 
             SocketCore(const SocketCore&) = delete;
             SocketCore& operator=(const SocketCore&) = delete;
 
-            SocketCore(SocketCore&& other) noexcept(std::is_nothrow_move_constructible_v<SocketT>)
+            SocketCore(SocketCore&& other) noexcept
                 : handle_(std::move(other.handle_)), domain_(std::move(other.domain_)), service_(std::move(other.service_)), proto_(std::move(other.proto_))
             {
                 other.invalidate_();
             }
 
             //there is potential leak of resources here, because we are not disposing of the previous state
-            SocketCore& operator=(SocketCore&& other) noexcept(std::is_nothrow_move_constructible_v<SocketT> && std::is_nothrow_swappable_v<SocketT>){
+            SocketCore& operator=(SocketCore&& other) noexcept{
                 //the destructor of the temporary left here might return an error but we can't handle it
                 SocketCore(std::move(other)).swap(*this);
                 return *this;
             }
 
-            constexpr void swap(SocketCore& other) noexcept(std::is_nothrow_swappable_v<SocketT>){
+            constexpr void swap(SocketCore& other) noexcept{
                 std::swap(domain_, other.domain_);
                 std::swap(service_, other.service_);
                 std::swap(proto_, other.proto_);
@@ -89,15 +90,7 @@ namespace ninttp::internal
             }
 
             //Only checks for backend validity. it can happen that the socket is valid, but it is not usable nor opened (for external causes)
-            constexpr bool isValid() const noexcept{ return BackendT::isValidSocket(handle_); }
-
-            //TODO: enforce conditions on socket state (thus implementing isOpen and isUsable) (invariants)
-
-            //currently the same as isValid
-            constexpr bool isUsable() const noexcept{ return isValid(); };
-
-            //currently the same as isValid
-            constexpr bool isOpen() const noexcept{ return isValid(); };
+            constexpr bool isUsable() const noexcept{ return BackendT::isUsableSocket(handle_); }
 
             constexpr Domain domain() const noexcept{ return domain_; };
 
@@ -105,39 +98,14 @@ namespace ninttp::internal
 
             constexpr Protocol protocol() const noexcept{ return proto_; };
 
-            // Return a read-only view of the native handle. Do not acquire it by
-            // another owner unless you first release() this SocketCore.
-            constexpr const SocketT& nativeHandle() const noexcept{ return handle_; };
-
             std::expected<void, SocketError> shutdown(ShutdownPolicy what) noexcept{
-                if(BackendT::shutdownSocket(this->handle_, what)){
+                if(BackendT::shutdownSocket(this->handle_, what))
                     return {};
-                }
 
                 return std::unexpected{SocketError{BackendT::getLastError()}};
             }
 
-            //closes previous state. May return an error if closing didn't work. Does not change state if so (strong guarantee).
-            //currently it does not. It may close the previous socket without creating a new one (openSocket may fail after closing the previous).
-            //maybe preopen a socket, and if it fails return the error, and only then close the previous?
-            //but if closing fails, we will need to close the preallocated socket, but that can also fail, leaving us with two error codes (failed closing the previous
-            //and failed closing the preallocated). Look into this
-            std::expected<void, SocketError> open(Domain d, Service s, Protocol p) noexcept{
-                if(auto e = this->close(); !e.has_value())
-                    return std::unexpected{e.error()};
-
-                handle_ = BackendT::openSocket(d, s, p);
-                if(!BackendT::isValidSocket(handle_))
-                    return std::unexpected{SocketError{BackendT::getLastError()}};
-
-                domain_ = d;
-                service_ = s;
-                proto_ = p;
-
-                return {};
-            }
-
-            [[nodiscard]] constexpr SocketT release() noexcept(std::is_nothrow_move_constructible_v<SocketT> && std::is_nothrow_move_assignable_v<SocketT>){
+            [[nodiscard]] constexpr SocketT release() noexcept{
                 SocketT prev = std::move(handle_);
                 this->invalidate_();
                 return prev;
@@ -147,7 +115,7 @@ namespace ninttp::internal
             //invalidates the instance. 
             std::expected<void, SocketError> close() noexcept{
                 //already closed or invalidated somewhere else
-                if(!BackendT::isValidSocket(handle_))
+                if(!BackendT::isUsableSocket(handle_))
                     return {};
 
                 if(BackendT::closeSocket(handle_)){
@@ -191,16 +159,16 @@ namespace ninttp::internal
             }
             
             #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-            //here one would expect returning an optional error code, but as this is always used inside a constructor,
-            //the final output will still be a throw if something goe wrong, so just let it bubble up to the caller.
-            static void initBackend(){
-                if(!backendInited){
-                    if(!BackendT::init())
+                //here one would expect returning an optional error code, but as this is always used inside a constructor,
+                //the final output will still be a throw if something goe wrong, so just let it bubble up to the caller.
+                static void initBackend(){
+                    if(!backendInited){
+                        if(!BackendT::init())
                         throw SocketError{BackendT::getLastError()};
-                    backendInited = true;
+                        backendInited = true;
+                    }
                 }
-            }
-            static inline constinit bool backendInited = false;
+                static inline constinit bool backendInited = false;
             #endif
     };
 } // namespace ninttp::internal

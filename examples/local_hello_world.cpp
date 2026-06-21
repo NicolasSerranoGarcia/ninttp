@@ -1,7 +1,6 @@
 #include <unistd.h>
 
 #include <array>
-#include <cstring>
 #include <exception>
 #include <iostream>
 
@@ -14,7 +13,7 @@ int main(){
 		using ClientSocket = ninttp::StreamSocket<Endpoint>;
 		using ServerSocket = ninttp::ListenerSocket<Endpoint, ClientSocket>;
 
-		constexpr auto message = "hello world";
+		constexpr char message[] = "hello world";
 		const auto port = static_cast<uint16_t>(40000 + (::getpid() % 10000));
 		const auto endpoint = ninttp::IPv4Endpoint::loopback(port);
 
@@ -37,7 +36,7 @@ int main(){
 			return 1;
 		}
 
-		auto sendResult = client.send(message, std::strlen(message));
+		auto sendResult = client.send(std::span{message}.first(std::size(message) - 1));
 		if (!sendResult.has_value()) {
 			std::cerr << "send failed: " << sendResult.error().msg() << '\n';
 			return 1;
@@ -53,7 +52,7 @@ int main(){
 
 		auto connection = std::move(acceptResult.value());
 		std::array<char, 64> buffer{};
-		auto receiveResult = connection.receive(buffer.data(), buffer.size() - 1);
+		auto receiveResult = connection.receive(std::span{buffer}.first(buffer.size() - 1));
 		if (!receiveResult.has_value()) {
 			std::cerr << "receive failed: " << receiveResult.error().msg() << '\n';
 			return 1;

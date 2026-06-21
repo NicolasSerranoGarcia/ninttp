@@ -4,14 +4,15 @@
 #include "../../types.hpp"
 #include "../../utils.hpp"
 
+#include <expected>
 #include <optional>
+#include <span>
 
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring> // strerror
-#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <unistd.h>
@@ -109,7 +110,7 @@ namespace ninttp::internal
 
             static bool closeSocket(const SocketT& s) noexcept{ return ::close(s) == 0; };
             
-            static constexpr bool isValidSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
+            static constexpr bool isUsableSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
             
             static bool shutdownSocket(const SocketT& s, ShutdownPolicy what) noexcept{
                 return ::shutdown(s, toNativeShutdownPolicy(what)) == 0;
@@ -155,10 +156,10 @@ namespace ninttp::internal
             }
 
             template<typename EndpointT>
-            static EndpointT fromStorage(const AddressStorageT& storage){
+            static std::expected<EndpointT, ErrorT> fromStorage(const AddressStorageT& storage) noexcept{
                 if constexpr(std::same_as<EndpointT, ninttp::IPv4Endpoint>){
                     if(storage.ss_family != AF_INET)
-                        throw std::runtime_error("Invalid IPv4 endpoint storage");
+                        return std::unexpected{EAFNOSUPPORT};
 
                     sockaddr_in native{};
                     std::memcpy(&native, &storage, sizeof(native));
@@ -170,12 +171,12 @@ namespace ninttp::internal
                 }
             }
 
-            static ssize_t send(const SocketT& s, const char* buff, size_t n) noexcept{
-                return ::send(s, buff, n, 0);
+            static ssize_t send(const SocketT& s, std::span<const char> data) noexcept{
+                return ::send(s, data.data(), data.size(), 0);
             }
 
-            static ssize_t receive(const SocketT& s, char* buff, size_t n) noexcept{
-                return ::recv(s, buff, n, 0);
+            static ssize_t receive(const SocketT& s, std::span<char> buffer) noexcept{
+                return ::recv(s, buffer.data(), buffer.size(), 0);
             }
 
             //native error code

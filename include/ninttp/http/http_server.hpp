@@ -7,6 +7,7 @@
 #include "internal/http_response_builder.hpp"
 #include "types.hpp"
 
+#include <array>
 #include <vector>
 #include <unordered_map>
 #include <functional>
@@ -62,11 +63,11 @@ namespace ninttp
 
                     std::string got;
 
-                    char buf[512];
+                    std::array<char, 512> buf{};
                     bool parseFailed = false;
 
                     while(!parser.finished()){
-                        auto res = streamSock.receive(buf, sizeof(buf));
+                        auto res = streamSock.receive(buf);
 
                         if(!res.has_value())
                             return std::move(res.error());
@@ -144,7 +145,7 @@ namespace ninttp
 
                         //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
                         //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
-                        streamSock.send(responseStr.data(), responseStr.size());
+                        streamSock.send(responseStr);
                     } else{
                         //send a 404
                     }

@@ -95,7 +95,8 @@ namespace ninttp::internal
 
                                 auto colon = constructed.find(':', lastProcessedIdx);
 
-                                assert(colon != std::string::npos);
+                                if(colon == std::string::npos)
+                                    return std::unexpected{httpParseError{ .what = "Malformed http packet"}};
 
                                 internal::Header header;
 
@@ -119,11 +120,33 @@ namespace ninttp::internal
                                 response.headers.push_back(std::move(header));
                             }
 
-                            for(const auto& header : response.headers)
-                                if(header.key == std::string("Content-Length"))
-                                    bodySize = std::stoi(header.value);
+                            for(const auto& header : request.headers){
+                                if(header.key != std::string("Content-Length"))
+                                    continue;
 
-                            if(bodySize == -1 || bodySize == 0){
+                                try{
+                                    bodySize = std::stoi(header.value);
+                                } catch(std::invalid_argument& inv){
+                                    return std::unexpected{
+                                        httpParseError{ .what = std::string{"Expected valid Content-Length, given "} + header.value}
+                                    };
+                                } catch(std::out_of_range& r){
+                                    return std::unexpected{
+                                        httpParseError{ .what = "Content-Length field exceeds allowed range"};
+                                    };
+                                }
+
+                                break;
+                            }
+
+                            if(bodySize < 0){
+                                return std::unexpected{
+                                    httpParseError{ .what = std::string{"Expected Content-Length field to be non-negative, given "} + header.value}
+                                };
+                            }
+
+                            //no body so the message is complete
+                            if(bodySize == 0){
                                 state = Processing::Finished;
                                 return httpParseStatus::Done;
                             }

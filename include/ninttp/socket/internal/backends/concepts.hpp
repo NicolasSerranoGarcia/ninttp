@@ -2,8 +2,10 @@
 
 #include <concepts>
 #include <cstddef>
+#include <expected>
 #include <type_traits>
 #include <optional>
+#include <span>
 #include <string>
 
 #include "../../../endpoints.hpp"
@@ -55,9 +57,8 @@ namespace ninttp::internal {
                     const typename Backend::AddressStorageT* addr,
                     typename Backend::AddressLenT addrLen,
                     typename Backend::ErrorT err,
-                    const char* sendBuff,
-                    char* recvBuff,
-                    std::size_t n) {
+                    std::span<const char> sendBuffer,
+                    std::span<char> receiveBuffer) {
             #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
             { Backend::init() } noexcept -> std::convertible_to<bool>;
             { Backend::deinit() } noexcept -> std::convertible_to<bool>;
@@ -65,7 +66,7 @@ namespace ninttp::internal {
 
             { Backend::openSocket(domain, service, protocol) } noexcept -> std::same_as<typename Backend::SocketT>;
             { Backend::closeSocket(socket) } noexcept -> std::convertible_to<bool>;
-            { Backend::isValidSocket(socket) } noexcept -> std::convertible_to<bool>;
+            { Backend::isUsableSocket(socket) } noexcept -> std::convertible_to<bool>;
             { Backend::shutdownSocket(socket, what) } noexcept -> std::convertible_to<bool>;
 
             { Backend::bind(socket, addr, addrLen) } noexcept -> std::convertible_to<bool>;
@@ -75,10 +76,11 @@ namespace ninttp::internal {
 
             { Backend::toStorage(ninttp::IPv4Endpoint{}) } noexcept -> std::same_as<typename Backend::AddressStorageT>;
             { Backend::storageLen(ninttp::IPv4Endpoint{}) } noexcept -> std::convertible_to<typename Backend::AddressLenT>;
-            { Backend::template fromStorage<ninttp::IPv4Endpoint>(*addr) } -> std::same_as<ninttp::IPv4Endpoint>;
+            { Backend::template fromStorage<ninttp::IPv4Endpoint>(*addr) } noexcept
+                -> std::same_as<std::expected<ninttp::IPv4Endpoint, typename Backend::ErrorT>>;
 
-            { Backend::send(socket, sendBuff, n) } noexcept -> std::convertible_to<std::ptrdiff_t>;
-            { Backend::receive(socket, recvBuff, n) } noexcept -> std::convertible_to<std::ptrdiff_t>;
+            { Backend::send(socket, sendBuffer) } noexcept -> std::convertible_to<std::ptrdiff_t>;
+            { Backend::receive(socket, receiveBuffer) } noexcept -> std::convertible_to<std::ptrdiff_t>;
 
             { Backend::getLastError() } noexcept -> std::same_as<typename Backend::ErrorT>;
             { Backend::getMsgFromError(err) } -> std::same_as<std::string>;

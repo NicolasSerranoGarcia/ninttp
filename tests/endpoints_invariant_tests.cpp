@@ -2,7 +2,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <stdexcept>
 
 #include <ninttp/endpoints.hpp>
 #include <ninttp/socket/internal/select_backend.hpp>
@@ -55,26 +54,25 @@ int main() {
         std::memcpy(&storage, &native, sizeof(native));
 
         const auto endpoint = ninttp::internal::SelectedBackend::fromStorage<ninttp::IPv4Endpoint>(storage);
-        const auto roundTrip = readIpv4(ninttp::internal::SelectedBackend::toStorage(endpoint));
+        if (!endpoint.has_value()) {
+            std::cerr << "IPv4 fromStorage unexpectedly rejected valid storage\n";
+            return EXIT_FAILURE;
+        }
+
+        const auto roundTrip = readIpv4(ninttp::internal::SelectedBackend::toStorage(*endpoint));
 
         ok = checkEqual("IPv4 fromStorage family", roundTrip.sin_family, AF_INET) && ok;
         ok = checkEqual("IPv4 fromStorage address", roundTrip.sin_addr.s_addr, native.sin_addr.s_addr) && ok;
         ok = checkEqual("IPv4 fromStorage port", roundTrip.sin_port, native.sin_port) && ok;
-        ok = checkEqual("IPv4 fromStorage host address", endpoint.addressHostOrder(), 0x0A000001u) && ok;
-        ok = checkEqual("IPv4 fromStorage host port", endpoint.portHostOrder(), 80u) && ok;
+        ok = checkEqual("IPv4 fromStorage host address", endpoint->addressHostOrder(), 0x0A000001u) && ok;
+        ok = checkEqual("IPv4 fromStorage host port", endpoint->portHostOrder(), 80u) && ok;
     }
 
     {
         ninttp::internal::SelectedBackend::AddressStorageT storage{};
-        bool threw = false;
+        const auto endpoint = ninttp::internal::SelectedBackend::fromStorage<ninttp::IPv4Endpoint>(storage);
 
-        try {
-            (void)ninttp::internal::SelectedBackend::fromStorage<ninttp::IPv4Endpoint>(storage);
-        } catch (const std::runtime_error&) {
-            threw = true;
-        }
-
-        if (!threw) {
+        if (endpoint.has_value()) {
             std::cerr << "IPv4 fromStorage rejected invalid family failed\n";
             ok = false;
         }

@@ -5,9 +5,11 @@
 
 #include <concepts>
 #include <cstring>
+#include <expected>
+#include <limits>
 #include <optional>
+#include <span>
 #include <string_view>
-#include <stdexcept>
 #include <string>
 #include <type_traits>
 
@@ -88,12 +90,7 @@ namespace ninttp::internal
                 return true;
             }
 
-            static bool deinit() noexcept{
-                if(WSACleanup() == SOCKET_ERROR)
-                    return false;
-
-                return true;
-            }
+            static bool deinit() noexcept{ return WSACleanup() != SOCKET_ERROR; }
 
             //returns a valid socket descriptor or invalidSocket() on error
             static SocketT openSocket(Domain d, Service s, Protocol p) noexcept{
@@ -104,7 +101,7 @@ namespace ninttp::internal
                 return ::closesocket(s) == 0;
             };
             
-            static constexpr bool isValidSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
+            static constexpr bool isUsableSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
             
             static bool shutdownSocket(const SocketT& s, ShutdownPolicy what) noexcept{ 
                 return ::shutdown(s, toNativeShutdownPolicy(what)) != SOCKET_ERROR;
@@ -151,10 +148,11 @@ namespace ninttp::internal
             }
 
             template<typename EndpointT>
-            static EndpointT fromStorage(const AddressStorageT& storage){
+            static std::expected<EndpointT, ErrorT> fromStorage(const AddressStorageT& storage) noexcept{
                 if constexpr(std::same_as<EndpointT, IPv4Endpoint>){
                     if(storage.ss_family != AF_INET)
-                        throw std::runtime_error("Invalid IPv4 endpoint storage");
+                        return std::unexpected{WSAEAFNOSUPPORT}; //TODO: this should not return an error (errors go through the getLastError). This would make it
+                        //unsafer for concurrency? most probably, but idk 
 
                     sockaddr_in native{};
                     std::memcpy(&native, &storage, sizeof(native));
@@ -166,12 +164,22 @@ namespace ninttp::internal
                 }
             }
 
-            static ssize_t send(const SocketT& s, const char* buff, size_t n) noexcept{
-                return ::send(s, buff, n, 0);
+            static ssize_t send(const SocketT& s, std::span<const char> data) noexcept{
+                if(data.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())){
+                    WSASetLastError(WSAEMSGSIZE);
+                    return SOCKET_ERROR;
+                }
+
+                return ::send(s, data.data(), static_cast<int>(data.size()), 0);
             }
 
-            static ssize_t receive(const SocketT& s, char* buff, size_t n) noexcept{
-                return ::recv(s, buff, n, 0);
+            static ssize_t receive(const SocketT& s, std::span<char> buffer) noexcept{
+                if(buffer.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())){
+                    WSASetLastError(WSAEMSGSIZE);
+                    return SOCKET_ERROR;
+                }
+
+                return ::recv(s, buffer.data(), static_cast<int>(buffer.size()), 0);
             }
 
             static ErrorT getLastError() noexcept{ return static_cast<int>(WSAGetLastError()); }

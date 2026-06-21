@@ -39,8 +39,8 @@ include(TestBigEndian)
 # It defines valuable variables such as CMAKE_INSTALL_INCLUDEDIR, CMAKE_INSTALL_LIBDIR, etc.
 include(GNUInstallDirs)
 
-option(ninttp_BUILD_TESTS "Build ninttp tests" OFF)
-option(ninttp_BUILD_EXAMPLES "Build ninttp examples" OFF)
+option(NINTTP_BUILD_TESTS "Build ninttp tests" OFF)
+option(NINTTP_BUILD_EXAMPLES "Build ninttp examples" OFF)
 
 # automatically set depending on if the project is being called as a subproject
 # (in that case there is usually no need for an installation target)
@@ -222,11 +222,11 @@ endif()
 
 # TEST AND EXAMPLES
 
-if(ninttp_BUILD_TESTS)
+if(NINTTP_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
 
-if(ninttp_BUILD_EXAMPLES)
+if(NINTTP_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
