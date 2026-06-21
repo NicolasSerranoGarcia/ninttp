@@ -16,6 +16,7 @@
 #include "../../types.hpp"
 #include "../../utils.hpp"
 #include "../../../endpoints.hpp"
+#include "concepts.hpp"
 
 namespace ninttp::internal
 {
@@ -67,6 +68,7 @@ namespace ninttp::internal
             using SocketT = SOCKET;
             using AddressStorageT = sockaddr_storage;
             using AddressLenT = int; //included from the own winsock2
+            using CloseStatusT = SocketCloseStatus<ErrorT>;
 
             struct AddressBundleT{
                 SocketT socket;
@@ -97,8 +99,19 @@ namespace ninttp::internal
                 return static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
             }
             
-            static bool closeSocket(const SocketT& s) noexcept{
-                return ::closesocket(s) == 0;
+            static CloseStatusT closeSocket(const SocketT& s) noexcept{
+                if(::closesocket(s) == 0)
+                    return {SocketCloseDisposition::Released, std::nullopt};
+
+                const ErrorT error = getLastError();
+
+                if(error == WSAEWOULDBLOCK)
+                    return {SocketCloseDisposition::Retry, error};
+
+                if(error == WSAENOTSOCK)
+                    return {SocketCloseDisposition::Released, error};
+
+                return {SocketCloseDisposition::Unspecified, error};
             };
             
             static constexpr bool isUsableSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
@@ -182,7 +195,7 @@ namespace ninttp::internal
                 return ::recv(s, buffer.data(), static_cast<int>(buffer.size()), 0);
             }
 
-            static ErrorT getLastError() noexcept{ return static_cast<int>(WSAGetLastError()); }
+            static inline ErrorT getLastError() noexcept{ return static_cast<ErrorT>(WSAGetLastError()); }
 
             //FormatMessage can fail and in that case we should either throw
             //or return an optional

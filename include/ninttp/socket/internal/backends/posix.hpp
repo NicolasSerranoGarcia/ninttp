@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../../endpoints.hpp"
+#include "concepts.hpp"
 #include "../../types.hpp"
 #include "../../utils.hpp"
 
@@ -96,6 +97,7 @@ namespace ninttp::internal
             using ErrorT = int;
             using AddressStorageT = sockaddr_storage;
             using AddressLenT = socklen_t;
+            using CloseStatusT = SocketCloseStatus<ErrorT>;
 
             struct AddressBundleT{
                 SocketT socket;
@@ -108,7 +110,24 @@ namespace ninttp::internal
                 return static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
             };
 
-            static bool closeSocket(const SocketT& s) noexcept{ return ::close(s) == 0; };
+            static CloseStatusT closeSocket(const SocketT& s) noexcept{
+                if(::close(s) == 0)
+                    return {SocketCloseDisposition::Released, std::nullopt};
+
+                const ErrorT error = getLastError();
+
+                // Linux, Android, and the BSDs release a valid descriptor even
+                // when close reports an error. Apple documents the errors but
+                // not the descriptor disposition, so keep that result honest.
+                #if NINTTP_PLATFORM_LINUX == 1 || NINTTP_PLATFORM_ANDROID == 1 || NINTTP_PLATFORM_BSD == 1
+                    return {SocketCloseDisposition::Released, error};
+                #else
+                    if(error == EBADF)
+                        return {SocketCloseDisposition::Released, error};
+
+                    return {SocketCloseDisposition::Unspecified, error};
+                #endif
+            };
             
             static constexpr bool isUsableSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
             
@@ -180,7 +199,7 @@ namespace ninttp::internal
             }
 
             //native error code
-            static ErrorT getLastError() noexcept{ return static_cast<int>(errno); };
+            static ErrorT getLastError() noexcept{ return static_cast<ErrorT>(errno); };
 
             static std::string getMsgFromError(const ErrorT& err){
                 return std::string(strerror(err));

@@ -76,8 +76,8 @@ namespace ninttp::internal
             }
 
             //there is potential leak of resources here, because we are not disposing of the previous state
+            //the destructor of the temporary left here might return an error but we can't handle it
             SocketCore& operator=(SocketCore&& other) noexcept{
-                //the destructor of the temporary left here might return an error but we can't handle it
                 SocketCore(std::move(other)).swap(*this);
                 return *this;
             }
@@ -105,6 +105,17 @@ namespace ninttp::internal
                 return std::unexpected{SocketError{BackendT::getLastError()}};
             }
 
+            //replacement for move assignment that explicitly returns the state of closing the descriptor of the previous state
+            //If closing the previous socket state fails, the other parameter is NOT consumed and the caller retains its lifetime
+            std::expected<void, SocketError> replace(SocketCore&& other){
+                if(auto closed = this->close(); !closed){
+                    return std::unexpected{closed.error()};
+                }
+
+                *this = std::move(other);
+                return {};
+            }
+
             [[nodiscard]] constexpr SocketT release() noexcept{
                 SocketT prev = std::move(handle_);
                 this->invalidate_();
@@ -112,18 +123,22 @@ namespace ninttp::internal
             }
 
             //explicit cleanup, better for handling than the destructor
-            //invalidates the instance. 
+            //Retains ownership only when the backend explicitly permits retrying.
             std::expected<void, SocketError> close() noexcept{
                 //already closed or invalidated somewhere else
                 if(!BackendT::isUsableSocket(handle_))
                     return {};
 
-                if(BackendT::closeSocket(handle_)){
-                    this->invalidate_();
-                    return {};
-                }
+                auto status = BackendT::closeSocket(handle_);
 
-                return std::unexpected{SocketError{BackendT::getLastError()}};
+                if(status.disposition != SocketCloseDisposition::Retry)
+                    this->invalidate_();
+
+                if(status.error.has_value())
+                    return std::unexpected{SocketError{*status.error}};
+
+                assert(status.disposition == SocketCloseDisposition::Released);
+                return {};
             }
 
             //please be aware of letting the destructor handle shutdown of the socket instead of manually calling close()

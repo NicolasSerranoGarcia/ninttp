@@ -166,17 +166,17 @@ namespace ninttp::internal
                                     };
                                 } catch(std::out_of_range& r){
                                     return std::unexpected{
-                                        httpParseError{ .what = "Content-Length field exceeds allowed range"};
+                                        httpParseError{ .what = std::string{"Content-Length field exceeds allowed range"} }
+                                    };
+                                }
+
+                                if(bodySize < 0){
+                                    return std::unexpected{
+                                        httpParseError{ .what = std::string{"Expected Content-Length field to be non-negative, given "} + header.value}
                                     };
                                 }
 
                                 break;
-                            }
-
-                            if(bodySize < 0){
-                                return std::unexpected{
-                                    httpParseError{ .what = std::string{"Expected Content-Length field to be non-negative, given "} + header.value}
-                                };
                             }
 
                             //no body so the message is complete

@@ -12,6 +12,18 @@
 #include "../../types.hpp"
 
 namespace ninttp::internal {
+    enum class SocketCloseDisposition {
+        Released,
+        Retry,
+        Unspecified
+    };
+
+    template<typename ErrorT>
+    struct SocketCloseStatus {
+        SocketCloseDisposition disposition;
+        std::optional<ErrorT> error;
+    };
+
     /**
      * @brief POSIX/Winsock-shaped socket backend contract.
      *
@@ -31,6 +43,7 @@ namespace ninttp::internal {
             typename Backend::AddressStorageT;
             typename Backend::AddressLenT;
             typename Backend::AddressBundleT;
+            typename Backend::CloseStatusT;
         }
         && requires(typename Backend::AddressBundleT bundle) {
             requires std::same_as<
@@ -65,7 +78,7 @@ namespace ninttp::internal {
             #endif
 
             { Backend::openSocket(domain, service, protocol) } noexcept -> std::same_as<typename Backend::SocketT>;
-            { Backend::closeSocket(socket) } noexcept -> std::convertible_to<bool>;
+            { Backend::closeSocket(socket) } noexcept -> std::same_as<typename Backend::CloseStatusT>;
             { Backend::isUsableSocket(socket) } noexcept -> std::convertible_to<bool>;
             { Backend::shutdownSocket(socket, what) } noexcept -> std::convertible_to<bool>;
 
