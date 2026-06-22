@@ -79,24 +79,29 @@ namespace ninttp::internal
             //init and deinit count is left as a chore for the user of the
             //functions, as one can init the backend several times
             //asking for different versions of the winsock
-            static bool init() noexcept{
+            static std::expected<void, ErrorT> init() noexcept{
                 WSADATA wsaData;
 
-                int iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
-                if (iResult != 0) {
-                    //since this is currently sync, we probably can get away with this
-                    WSASetLastError(iResult);
-                    return false;
-                }
+                const int result = WSAStartup(MAKEWORD(2,2), &wsaData);
+                if(result != 0)
+                    return std::unexpected{static_cast<ErrorT>(result)};
 
-                return true;
+                return {};
             }
 
-            static bool deinit() noexcept{ return WSACleanup() != SOCKET_ERROR; }
+            static std::expected<void, ErrorT> deinit() noexcept{
+                if(WSACleanup() == SOCKET_ERROR)
+                    return std::unexpected{getLastError()};
 
-            //returns a valid socket descriptor or invalidSocket() on error
-            static SocketT openSocket(Domain d, Service s, Protocol p) noexcept{
-                return static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
+                return {};
+            }
+
+            static std::expected<SocketT, ErrorT> openSocket(Domain d, Service s, Protocol p) noexcept{
+                const SocketT socket = static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
+                if(socket == invalidSocket())
+                    return std::unexpected{getLastError()};
+
+                return socket;
             }
             
             static CloseStatusT closeSocket(const SocketT& s) noexcept{
@@ -116,33 +121,45 @@ namespace ninttp::internal
             
             static constexpr bool isUsableSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
             
-            static bool shutdownSocket(const SocketT& s, ShutdownPolicy what) noexcept{ 
-                return ::shutdown(s, toNativeShutdownPolicy(what)) != SOCKET_ERROR;
+            static std::expected<void, ErrorT> shutdownSocket(const SocketT& s, ShutdownPolicy what) noexcept{
+                if(::shutdown(s, toNativeShutdownPolicy(what)) == SOCKET_ERROR)
+                    return std::unexpected{getLastError()};
+
+                return {};
             };
 
-            static bool bind(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
-                return ::bind(s, reinterpret_cast<const sockaddr*>(addr), len) != SOCKET_ERROR;
+            static std::expected<void, ErrorT> bind(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
+                if(::bind(s, reinterpret_cast<const sockaddr*>(addr), len) == SOCKET_ERROR)
+                    return std::unexpected{getLastError()};
+
+                return {};
             }
 
 
-            static bool listen(const SocketT& s, int backlog) noexcept{
-                return ::listen(s, backlog) != SOCKET_ERROR;
+            static std::expected<void, ErrorT> listen(const SocketT& s, int backlog) noexcept{
+                if(::listen(s, backlog) == SOCKET_ERROR)
+                    return std::unexpected{getLastError()};
+
+                return {};
             }
 
-            static std::optional<AddressBundleT> accept(const SocketT& s) noexcept{
-                AddressStorageT storage;
+            static std::expected<AddressBundleT, ErrorT> accept(const SocketT& s) noexcept{
+                AddressStorageT storage{};
                 AddressLenT len = sizeof(storage);
 
                 SocketT sock = ::accept(s, reinterpret_cast<sockaddr*>(&storage), &len);
 
                 if(sock == invalidSocket())
-                    return {};
+                    return std::unexpected{getLastError()};
 
                 return AddressBundleT{sock, storage, len};
             }
 
-            static bool connect(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{ 
-                return ::connect(s, reinterpret_cast<const sockaddr*>(addr), len) != SOCKET_ERROR;
+            static std::expected<void, ErrorT> connect(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
+                if(::connect(s, reinterpret_cast<const sockaddr*>(addr), len) == SOCKET_ERROR)
+                    return std::unexpected{getLastError()};
+
+                return {};
             }
 
             static AddressStorageT toStorage(const IPv4Endpoint& endpoint) noexcept{ 
@@ -177,22 +194,26 @@ namespace ninttp::internal
                 }
             }
 
-            static ssize_t send(const SocketT& s, std::span<const char> data) noexcept{
-                if(data.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())){
-                    WSASetLastError(WSAEMSGSIZE);
-                    return SOCKET_ERROR;
-                }
+            static std::expected<std::size_t, ErrorT> send(const SocketT& s, std::span<const char> data) noexcept{
+                if(data.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+                    return std::unexpected{WSAEMSGSIZE};
 
-                return ::send(s, data.data(), static_cast<int>(data.size()), 0);
+                const int sent = ::send(s, data.data(), static_cast<int>(data.size()), 0);
+                if(sent == SOCKET_ERROR)
+                    return std::unexpected{getLastError()};
+
+                return static_cast<std::size_t>(sent);
             }
 
-            static ssize_t receive(const SocketT& s, std::span<char> buffer) noexcept{
-                if(buffer.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())){
-                    WSASetLastError(WSAEMSGSIZE);
-                    return SOCKET_ERROR;
-                }
+            static std::expected<std::size_t, ErrorT> receive(const SocketT& s, std::span<char> buffer) noexcept{
+                if(buffer.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+                    return std::unexpected{WSAEMSGSIZE};
 
-                return ::recv(s, buffer.data(), static_cast<int>(buffer.size()), 0);
+                const int received = ::recv(s, buffer.data(), static_cast<int>(buffer.size()), 0);
+                if(received == SOCKET_ERROR)
+                    return std::unexpected{getLastError()};
+
+                return static_cast<std::size_t>(received);
             }
 
             static inline ErrorT getLastError() noexcept{ return static_cast<ErrorT>(WSAGetLastError()); }

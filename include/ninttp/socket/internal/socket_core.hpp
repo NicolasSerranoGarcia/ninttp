@@ -20,7 +20,6 @@
 #include "backends/concepts.hpp"
 #include "../types.hpp"
 #include "../socket_error.hpp"
-#include "socket_state.hpp"
 
 //for future: it may take too long on multithreaded programs to capture errno. For that, we could maybe do a "recordLastError" so that you can presave the
 //error, just for handling it in subsequent steps. The message could be created from this memory, just like getErrMessageFromCapture. This way we avoid
@@ -39,14 +38,15 @@ namespace ninttp::internal
     class SocketCore{
         public:
             using SocketT = typename BackendT::SocketT;
+            using CloseStatus = SocketCloseStatus<SocketError>;
 
             static_assert(std::is_nothrow_swappable_v<SocketT>, "SocketT must be nothrow swappable");
             static_assert(std::is_nothrow_move_constructible_v<SocketT>, "SocketT must be nothrow move constructible");
             static_assert(std::is_nothrow_move_assignable_v<SocketT>, "SocketT must be nothrow move assignable");
 
             //does not start a local descriptor, just like std::thread does
-            constexpr SocketCore() noexcept
-                : domain_(Domain::Invalid), service_(Service::Invalid), proto_(Protocol::Invalid), handle_(BackendT::invalidSocket())
+            SocketCore()
+                : handle_(BackendT::invalidSocket()), domain_(Domain::Invalid), service_(Service::Invalid), proto_(Protocol::Invalid)
             {
                 #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
                 SocketCore::initBackend();
@@ -55,15 +55,17 @@ namespace ninttp::internal
 
             //passing invalid casted values to any of the parameter types is undefined behavior
             SocketCore(Domain d, Service s, Protocol p)
-                : domain_(d), service_(s), proto_(p)
+                : handle_(BackendT::invalidSocket()), domain_(d), service_(s), proto_(p)
             {
                 #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
                 SocketCore::initBackend();
                 #endif
 
-                handle_ = BackendT::openSocket(d, s, p);
-                if(!BackendT::isUsableSocket(handle_))
-                    throw SocketError{BackendT::getLastError()};
+                auto opened = BackendT::openSocket(d, s, p);
+                if(!opened.has_value())
+                    throw SocketError{opened.error()};
+
+                handle_ = std::move(*opened);
             }
 
             SocketCore(const SocketCore&) = delete;
@@ -99,15 +101,16 @@ namespace ninttp::internal
             constexpr Protocol protocol() const noexcept{ return proto_; };
 
             std::expected<void, SocketError> shutdown(ShutdownPolicy what) noexcept{
-                if(BackendT::shutdownSocket(this->handle_, what))
-                    return {};
+                auto shutdown = BackendT::shutdownSocket(this->handle_, what);
+                if(!shutdown.has_value())
+                    return std::unexpected{SocketError{shutdown.error()}};
 
-                return std::unexpected{SocketError{BackendT::getLastError()}};
+                return {};
             }
 
             //replacement for move assignment that explicitly returns the state of closing the descriptor of the previous state
             //If closing the previous socket state fails, the other parameter is NOT consumed and the caller retains its lifetime
-            std::expected<void, SocketError> replace(SocketCore&& other){
+            std::expected<void, CloseStatus> replace(SocketCore&& other){
                 if(auto closed = this->close(); !closed){
                     return std::unexpected{closed.error()};
                 }
@@ -124,7 +127,7 @@ namespace ninttp::internal
 
             //explicit cleanup, better for handling than the destructor
             //Retains ownership only when the backend explicitly permits retrying.
-            std::expected<void, SocketError> close() noexcept{
+            std::expected<void, CloseStatus> close() noexcept{
                 //already closed or invalidated somewhere else
                 if(!BackendT::isUsableSocket(handle_))
                     return {};
@@ -135,7 +138,10 @@ namespace ninttp::internal
                     this->invalidate_();
 
                 if(status.error.has_value())
-                    return std::unexpected{SocketError{*status.error}};
+                    return std::unexpected{CloseStatus{
+                        .disposition = status.disposition,
+                        .error = SocketError{*status.error}
+                    }};
 
                 assert(status.disposition == SocketCloseDisposition::Released);
                 return {};
@@ -144,8 +150,8 @@ namespace ninttp::internal
             //please be aware of letting the destructor handle shutdown of the socket instead of manually calling close()
             virtual ~SocketCore() noexcept{
                 //close returned an error
-                if(auto e = this->close(); !e.has_value())
-                    std::cerr << e.error().msg() << std::endl;
+                if(auto closed = this->close(); !closed.has_value() && closed.error().error.has_value())
+                    std::cerr << closed.error().error->msg() << std::endl;
             };
 
         protected:
@@ -153,7 +159,6 @@ namespace ninttp::internal
             Domain domain_;
             Service service_;
             Protocol proto_;
-            SocketState state_;
 
             //a combination of acquire and open which would be more error prone
             //for public API. It is only used for child socketClasses (like ListenerSocket) to build
@@ -178,8 +183,10 @@ namespace ninttp::internal
                 //the final output will still be a throw if something goe wrong, so just let it bubble up to the caller.
                 static void initBackend(){
                     if(!backendInited){
-                        if(!BackendT::init())
-                        throw SocketError{BackendT::getLastError()};
+                        auto initialized = BackendT::init();
+                        if(!initialized.has_value())
+                            throw SocketError{initialized.error()};
+
                         backendInited = true;
                     }
                 }

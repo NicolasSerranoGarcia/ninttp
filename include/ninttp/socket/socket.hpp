@@ -46,17 +46,17 @@ namespace ninttp
                 auto storage = internal::SelectedBackend::toStorage(endpoint);
                 auto len = static_cast<AddressLenT>(internal::SelectedBackend::storageLen(endpoint));
 
-                if(!internal::SelectedBackend::bind(handle_, &storage, len)) {
-                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
-                }
+                auto bound = internal::SelectedBackend::bind(handle_, &storage, len);
+                if(!bound.has_value())
+                    return std::unexpected{SocketError{bound.error()}};
 
                 return {};
             }
 
             std::expected<void, SocketError> listen(int backlog) noexcept{
-                if(!internal::SelectedBackend::listen(handle_, backlog)) {
-                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
-                }
+                auto listening = internal::SelectedBackend::listen(handle_, backlog);
+                if(!listening.has_value())
+                    return std::unexpected{SocketError{listening.error()}};
 
                 return {};
             }
@@ -64,7 +64,7 @@ namespace ninttp
             std::expected<ConnectedSocketT, SocketError> accept() noexcept{
                 auto accepted = internal::SelectedBackend::accept(handle_);
                 if(!accepted.has_value())
-                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
+                    return std::unexpected{SocketError{accepted.error()}};
 
                 auto endpoint = internal::SelectedBackend::template fromStorage<EndpointT>(accepted->storage);
                 if(!endpoint.has_value()){
@@ -109,9 +109,9 @@ namespace ninttp
                 auto storage = internal::SelectedBackend::toStorage(endpoint);
                 auto len = static_cast<AddressLenT>(internal::SelectedBackend::storageLen(endpoint));
 
-                if(!internal::SelectedBackend::connect(handle_, &storage, len)) {
-                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
-                }
+                auto connected = internal::SelectedBackend::connect(handle_, &storage, len);
+                if(!connected.has_value())
+                    return std::unexpected{SocketError{connected.error()}};
 
                 peerEndpoint_ = endpoint;
                 return {};
@@ -119,19 +119,18 @@ namespace ninttp
 
             std::expected<size_t, SocketError> send(std::span<const char> data) noexcept{
                 auto sent = internal::SelectedBackend::send(handle_, data);
-                if(sent == -1) {
-                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
-                }
+                if(!sent.has_value())
+                    return std::unexpected{SocketError{sent.error()}};
 
-                return sent;
+                return *sent;
             }
 
             std::expected<size_t, SocketError> receive(std::span<char> buffer) noexcept{
                 auto got = internal::SelectedBackend::receive(handle_, buffer);
-                if(got == -1)
-                    return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
+                if(!got.has_value())
+                    return std::unexpected{SocketError{got.error()}};
 
-                return got;
+                return *got;
             }
 
         private:
@@ -158,12 +157,13 @@ namespace ninttp
         if(deinited)
             return {};
 
-        if(internal::SelectedBackend::deinit()){
+        auto deinitialized = internal::SelectedBackend::deinit();
+        if(deinitialized.has_value()){
             deinited = true;
             return {};
         }
 
-        return std::unexpected{SocketError{internal::SelectedBackend::getLastError()}};
+        return std::unexpected{SocketError{deinitialized.error()}};
     }
     #endif
 } // namespace ninttp

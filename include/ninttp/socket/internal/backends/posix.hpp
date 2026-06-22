@@ -105,9 +105,12 @@ namespace ninttp::internal
                 AddressLenT len;
             };
 
-            //returns a valid SocketT or invalidSocket() on error. Check getLastError
-            static SocketT openSocket(Domain d, Service s, Protocol p) noexcept{
-                return static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
+            static std::expected<SocketT, ErrorT> openSocket(Domain d, Service s, Protocol p) noexcept{
+                const SocketT socket = static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
+                if(socket == invalidSocket())
+                    return std::unexpected{getLastError()};
+
+                return socket;
             };
 
             static CloseStatusT closeSocket(const SocketT& s) noexcept{
@@ -131,32 +134,44 @@ namespace ninttp::internal
             
             static constexpr bool isUsableSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
             
-            static bool shutdownSocket(const SocketT& s, ShutdownPolicy what) noexcept{
-                return ::shutdown(s, toNativeShutdownPolicy(what)) == 0;
+            static std::expected<void, ErrorT> shutdownSocket(const SocketT& s, ShutdownPolicy what) noexcept{
+                if(::shutdown(s, toNativeShutdownPolicy(what)) != 0)
+                    return std::unexpected{getLastError()};
+
+                return {};
             };
 
-            static bool bind(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
-                return ::bind(s, reinterpret_cast<const sockaddr*>(addr), len) == 0;
+            static std::expected<void, ErrorT> bind(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
+                if(::bind(s, reinterpret_cast<const sockaddr*>(addr), len) != 0)
+                    return std::unexpected{getLastError()};
+
+                return {};
             }
 
-            static bool listen(const SocketT& s, int backlog) noexcept{
-                return ::listen(s, backlog) == 0;
+            static std::expected<void, ErrorT> listen(const SocketT& s, int backlog) noexcept{
+                if(::listen(s, backlog) != 0)
+                    return std::unexpected{getLastError()};
+
+                return {};
             }
 
-            static std::optional<AddressBundleT> accept(const SocketT& s) noexcept{
-                AddressStorageT storage;
+            static std::expected<AddressBundleT, ErrorT> accept(const SocketT& s) noexcept{
+                AddressStorageT storage{};
                 AddressLenT len = sizeof(storage);
 
                 SocketT sock = ::accept(s, reinterpret_cast<sockaddr*>(&storage), &len);
 
-                if(sock == -1)
-                    return {};
+                if(sock == invalidSocket())
+                    return std::unexpected{getLastError()};
 
                 return AddressBundleT{sock, storage, len};
             }
 
-            static bool connect(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
-                return ::connect(s, reinterpret_cast<const sockaddr*>(addr), len) == 0;
+            static std::expected<void, ErrorT> connect(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
+                if(::connect(s, reinterpret_cast<const sockaddr*>(addr), len) != 0)
+                    return std::unexpected{getLastError()};
+
+                return {};
             }
 
             static AddressStorageT toStorage(const ninttp::IPv4Endpoint& endpoint) noexcept{
@@ -190,16 +205,24 @@ namespace ninttp::internal
                 }
             }
 
-            static ssize_t send(const SocketT& s, std::span<const char> data) noexcept{
-                return ::send(s, data.data(), data.size(), 0);
+            static std::expected<std::size_t, ErrorT> send(const SocketT& s, std::span<const char> data) noexcept{
+                const auto sent = ::send(s, data.data(), data.size(), 0);
+                if(sent == -1)
+                    return std::unexpected{getLastError()};
+
+                return static_cast<std::size_t>(sent);
             }
 
-            static ssize_t receive(const SocketT& s, std::span<char> buffer) noexcept{
-                return ::recv(s, buffer.data(), buffer.size(), 0);
+            static std::expected<std::size_t, ErrorT> receive(const SocketT& s, std::span<char> buffer) noexcept{
+                const auto received = ::recv(s, buffer.data(), buffer.size(), 0);
+                if(received == -1)
+                    return std::unexpected{getLastError()};
+
+                return static_cast<std::size_t>(received);
             }
 
             //native error code
-            static ErrorT getLastError() noexcept{ return static_cast<ErrorT>(errno); };
+            static inline ErrorT getLastError() noexcept{ return static_cast<ErrorT>(errno); };
 
             static std::string getMsgFromError(const ErrorT& err){
                 return std::string(strerror(err));
@@ -207,7 +230,7 @@ namespace ninttp::internal
 
             //this is the only reliable way I found to be explicit about an invalidSocket when we assume they may not be copyable. Creating
             //an instance guarantees no copy
-            static constexpr inline SocketT invalidSocket() noexcept{ return -1; }
+            static constexpr inline SocketT invalidSocket() noexcept{ return static_cast<SocketT>(-1); }
     };
 
 } // namespace ninttp::internal
