@@ -145,25 +145,4 @@ namespace ninttp
 
             EndpointT peerEndpoint_{};
     };
-
-    #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-    //this function is completely optional (and personally I would not use it) unless for very specific reasons. One of them might be
-    //that you are on windows, using Winsock, and you are doing additional OS API level programming, and you need fine grained control 
-    //over the availability of the winsock dll. Otherwise (your program needs ninttp until closing) it will get cleaned up and no resources will
-    //be leaked
-    std::expected<void, SocketError> deinitBackend() noexcept{
-        static bool deinited = false;
-
-        if(deinited)
-            return {};
-
-        auto deinitialized = internal::SelectedBackend::deinit();
-        if(deinitialized.has_value()){
-            deinited = true;
-            return {};
-        }
-
-        return std::unexpected{SocketError{deinitialized.error()}};
-    }
-    #endif
 } // namespace ninttp

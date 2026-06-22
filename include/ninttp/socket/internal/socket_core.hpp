@@ -49,7 +49,8 @@ namespace ninttp::internal
                 : handle_(BackendT::invalidSocket()), domain_(Domain::Invalid), service_(Service::Invalid), proto_(Protocol::Invalid)
             {
                 #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-                SocketCore::initBackend();
+                if(auto initialized = SocketCore::initBackend(); !initialized.has_value())
+                    throw initialized.error();
                 #endif
             };
 
@@ -58,7 +59,8 @@ namespace ninttp::internal
                 : handle_(BackendT::invalidSocket()), domain_(d), service_(s), proto_(p)
             {
                 #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-                SocketCore::initBackend();
+                if(auto initialized = SocketCore::initBackend(); !initialized.has_value())
+                    throw initialized.error();
                 #endif
 
                 auto opened = BackendT::openSocket(d, s, p);
@@ -179,18 +181,41 @@ namespace ninttp::internal
             }
             
             #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-                //here one would expect returning an optional error code, but as this is always used inside a constructor,
-                //the final output will still be a throw if something goe wrong, so just let it bubble up to the caller.
-                static void initBackend(){
-                    if(!backendInited){
-                        auto initialized = BackendT::init();
-                        if(!initialized.has_value())
-                            throw SocketError{initialized.error()};
+                static std::expected<void, SocketError> initBackend() noexcept{
+                    if(backendInited)
+                        return {};
 
-                        backendInited = true;
-                    }
+                    auto initialized = BackendT::init();
+                    if(!initialized.has_value())
+                        return std::unexpected{SocketError{initialized.error()}};
+
+                    backendInited = true;
+                    return {};
                 }
                 static inline constinit bool backendInited = false;
+
+                friend std::expected<void, SocketError> ninttp::deinitBackend() noexcept;
             #endif
     };
 } // namespace ninttp::internal
+
+namespace ninttp {
+    #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
+    //this function is completely optional (and personally I would not use it) unless for very specific reasons. One of them might be
+    //that you are on windows, using Winsock, and you are doing additional OS API level programming, and you need fine grained control 
+    //over the availability of the winsock dll. Otherwise (your program needs ninttp until closing) it will get cleaned up and no resources will
+    //be leaked
+    inline std::expected<void, SocketError> deinitBackend() noexcept{
+        if(!SocketBase::backendInited)
+            return {};
+
+        auto deinitialized = internal::SelectedBackend::deinit();
+        if(deinitialized.has_value()){
+            SocketBase::backendInited = false;
+            return {};
+        }
+
+        return std::unexpected{SocketError{deinitialized.error()}};
+    }
+    #endif
+} // namespace ninttp
