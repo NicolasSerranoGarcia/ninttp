@@ -16,6 +16,7 @@
 #include <iostream> //for std::cerr on SocketCore destructor
 #include <type_traits>
 #include <utility>
+#include <thread>
 
 #include "backends/concepts.hpp"
 #include "../types.hpp"
@@ -152,7 +153,22 @@ namespace ninttp::internal
             //please be aware of letting the destructor handle shutdown of the socket instead of manually calling close()
             virtual ~SocketCore() noexcept{
                 //close returned an error
-                if(auto closed = this->close(); !closed.has_value() && closed.error().error.has_value())
+
+                auto closed = this->close();
+
+                if(!closed && closed.error().disposition == SocketCloseDisposition::Retry){
+                    for(int i = 0; i < closeRetryAttempts; ++i){
+                        std::this_thread::sleep_for(20);
+                        auto retryClosed = this->close();
+                        if(retryClosed)
+                            return;
+
+                        if(retryClosed.error().error.has_value())
+                            std::cerr << retryClosed.error().error->msg() << std::endl;
+                    }
+                }
+
+                if(!closed.has_value() && closed.error().error.has_value())
                     std::cerr << closed.error().error->msg() << std::endl;
             };
 
@@ -171,6 +187,9 @@ namespace ninttp::internal
                 : handle_(sock), domain_(d), service_(s), proto_(p){}
 
         private:
+
+            static constinit const uint8_t closeRetryAttempts = 2;
+
 
             //does not release the handle. Use with care even yet it being private
             void invalidate_() noexcept{

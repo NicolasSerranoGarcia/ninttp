@@ -181,8 +181,7 @@ namespace ninttp::internal
             static std::expected<EndpointT, ErrorT> fromStorage(const AddressStorageT& storage) noexcept{
                 if constexpr(std::same_as<EndpointT, IPv4Endpoint>){
                     if(storage.ss_family != AF_INET)
-                        return std::unexpected{WSAEAFNOSUPPORT}; //TODO: this should not return an error (errors go through the getLastError). This would make it
-                        //unsafer for concurrency? most probably, but idk 
+                        return std::unexpected{WSAEAFNOSUPPORT};
 
                     sockaddr_in native{};
                     std::memcpy(&native, &storage, sizeof(native));

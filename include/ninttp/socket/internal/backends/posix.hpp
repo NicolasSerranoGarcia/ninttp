@@ -110,6 +110,15 @@ namespace ninttp::internal
                 if(socket == invalidSocket())
                     return std::unexpected{getLastError()};
 
+                #if NINTTP_PLATFORM_BSD == 1 || NINTTP_PLATFORM_APPLE == 1
+                const int noSigPipe = 1;
+                if(::setsockopt(socket, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe)) != 0){
+                    const ErrorT error = getLastError();
+                    ::close(socket);
+                    return std::unexpected{error};
+                }
+                #endif
+
                 return socket;
             };
 
@@ -164,6 +173,15 @@ namespace ninttp::internal
                 if(sock == invalidSocket())
                     return std::unexpected{getLastError()};
 
+                #if NINTTP_PLATFORM_BSD == 1 || NINTTP_PLATFORM_APPLE == 1
+                const int noSigPipe = 1;
+                if(::setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe)) != 0){
+                    const ErrorT error = getLastError();
+                    ::close(sock);
+                    return std::unexpected{error};
+                }
+                #endif
+
                 return AddressBundleT{sock, storage, len};
             }
 
@@ -206,7 +224,11 @@ namespace ninttp::internal
             }
 
             static std::expected<std::size_t, ErrorT> send(const SocketT& s, std::span<const char> data) noexcept{
+                #if NINTTP_PLATFORM_LINUX == 1 || NINTTP_PLATFORM_ANDROID == 1
+                const auto sent = ::send(s, data.data(), data.size(), MSG_NOSIGNAL);
+                #else
                 const auto sent = ::send(s, data.data(), data.size(), 0);
+                #endif
                 if(sent == -1)
                     return std::unexpected{getLastError()};
 
