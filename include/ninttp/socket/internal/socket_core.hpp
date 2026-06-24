@@ -16,7 +16,6 @@
 #include <iostream> //for std::cerr on SocketCore destructor
 #include <type_traits>
 #include <utility>
-#include <thread>
 
 #include "backends/concepts.hpp"
 #include "../types.hpp"
@@ -80,8 +79,20 @@ namespace ninttp::internal
                 other.invalidate_();
             }
 
-            //there is potential leak of resources here, because we are not disposing of the previous state
-            //the destructor of the temporary left here might return an error but we can't handle it
+            /**
+             * @brief Unchecked replacement, similar in spirit to unchecked std container operations.
+             *
+             * This operator stays noexcept and always consumes @p other, but the previous socket
+             * state is left to the temporary destructor. If that destructor cannot actually close the
+             * previous native socket, the failure cannot be reported here and the
+             * resource may leak.
+             *
+             * @warning Use replace() when the close result of the previous state must be observed
+             * by the caller.
+             *
+             * @param other Socket core whose state will be moved into this object.
+             * @return Reference to this object.
+             */
             SocketCore& operator=(SocketCore&& other) noexcept{
                 SocketCore(std::move(other)).swap(*this);
                 return *this;
@@ -111,13 +122,24 @@ namespace ninttp::internal
                 return {};
             }
 
-            //replacement for move assignment that explicitly returns the state of closing the descriptor of the previous state
-            //If closing the previous socket state fails, the other parameter is NOT consumed and the caller retains its lifetime
+            /**
+             * @brief Checked replacement for move assignment.
+             *
+             * The current socket state is closed first and its close status is returned on
+             * failure. In that case @p other is not consumed, so the caller retains ownership and
+             * can decide how to handle the failed cleanup.
+             *
+             * @param other Socket core whose state will replace the current one after successful
+             * cleanup.
+             * @return Empty result on success, or the close status of the current state on failure.
+             */
             std::expected<void, CloseStatus> replace(SocketCore&& other){
                 if(auto closed = this->close(); !closed){
                     return std::unexpected{closed.error()};
                 }
 
+                //here it is okay to use the move assignment because when .close() succeeds, it invalidates the socket, meaning 
+                //that the call in the destructor will have no effect which is what can trigger the leak on the move assignment.
                 *this = std::move(other);
                 return {};
             }
@@ -128,8 +150,23 @@ namespace ninttp::internal
                 return prev;
             }
 
-            //explicit cleanup, better for handling than the destructor
-            //Retains ownership only when the backend explicitly permits retrying.
+            /**
+             * @brief Explicit cleanup, better for handling than the destructor.
+             *
+             * This is the preferred method to handle graceful close of the socket. This does not
+             * follow a strict RAII approach, but it is what we get when trying to encapsulate a
+             * descriptor state into a lifetime object. Closing a socket can fail in various ways,
+             * but the key takeaway is which state the socket is in when the close operation fails.
+             *
+             * This function only reports the state at the moment of call. This means that the
+             * actual policy for close errors, such as what to do on Retry, is up to the user of
+             * this class. Ownership is retained only when the backend explicitly permits retrying.
+             *
+             * @return Empty result on success, or the close status reported by the backend on
+             * failure.
+             *
+             * @see SocketCloseDisposition
+             */
             std::expected<void, CloseStatus> close() noexcept{
                 //already closed or invalidated somewhere else
                 if(!BackendT::isUsableSocket(handle_))
@@ -150,26 +187,26 @@ namespace ninttp::internal
                 return {};
             }
 
-            //please be aware of letting the destructor handle shutdown of the socket instead of manually calling close()
+            /**
+             * @brief Best-effort socket cleanup.
+             *
+             * Please be aware of letting the destructor handle shutdown of the socket instead of
+             * manually calling close(). Errors are reported through std::cerr, which will likely
+             * change in the future because it is shared between the user and the library and can
+             * interfere.
+             */
             virtual ~SocketCore() noexcept{
-                //close returned an error
-
                 auto closed = this->close();
 
-                if(!closed && closed.error().disposition == SocketCloseDisposition::Retry){
-                    for(int i = 0; i < closeRetryAttempts; ++i){
-                        std::this_thread::sleep_for(20);
-                        auto retryClosed = this->close();
-                        if(retryClosed)
-                            return;
-
-                        if(retryClosed.error().error.has_value())
-                            std::cerr << retryClosed.error().error->msg() << std::endl;
+                if(!closed.has_value() && closed.error().error.has_value()){
+                    try{
+                        std::cerr << closed.error().error->msg() << std::endl;
+                    } catch(std::bad_alloc& err){
+                        std::cerr << err.what() << std::endl;
+                    } catch(...){
+                        std::fprintf(stderr, "Failed to destruct socket");
                     }
                 }
-
-                if(!closed.has_value() && closed.error().error.has_value())
-                    std::cerr << closed.error().error->msg() << std::endl;
             };
 
         protected:
@@ -187,10 +224,6 @@ namespace ninttp::internal
                 : handle_(sock), domain_(d), service_(s), proto_(p){}
 
         private:
-
-            static constinit const uint8_t closeRetryAttempts = 2;
-
-
             //does not release the handle. Use with care even yet it being private
             void invalidate_() noexcept{
                 handle_ = BackendT::invalidSocket();
