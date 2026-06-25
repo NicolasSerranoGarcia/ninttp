@@ -23,10 +23,13 @@
 
 //for future: it may take too long on multithreaded programs to capture errno. For that, we could maybe do a "recordLastError" so that you can presave the
 //error, just for handling it in subsequent steps. The message could be created from this memory, just like getErrMessageFromCapture. This way we avoid
-//mixing up errors. 
-
+//mixing up errors.
 namespace ninttp::internal
 {
+    #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
+    static constinit inline bool backendInited = false;
+    #endif
+
     //on this level of abstraction, any socket can be interchanged, moved from to others. Here we define move, swap, release, acquire, but that doesn't mean that 
     //on higher levels they can do the same
     //Semantics: a variable of this type can be reused to hold multiple valid instances of a socket representation. 
@@ -233,41 +236,38 @@ namespace ninttp::internal
             }
             
             #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-                static std::expected<void, SocketError> initBackend() noexcept{
-                    if(backendInited)
-                        return {};
-
-                    auto initialized = BackendT::init();
-                    if(!initialized.has_value())
-                        return std::unexpected{SocketError{initialized.error()}};
-
-                    backendInited = true;
+            static std::expected<void, SocketError> initBackend() noexcept{
+                if(backendInited)
                     return {};
-                }
-                static inline constinit bool backendInited = false;
 
-                friend std::expected<void, SocketError> ninttp::deinitBackend() noexcept;
+                auto initialized = BackendT::init();
+                if(!initialized.has_value())
+                    return std::unexpected{SocketError{initialized.error()}};
+
+                backendInited = true;
+                return {};
+            }
             #endif
     };
 } // namespace ninttp::internal
 
+#if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
 namespace ninttp {
-    #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
     //this function is completely optional (and personally I would not use it) unless for very specific reasons. One of them might be
     //that you are on windows, using Winsock, and you are doing additional OS API level programming, and you need fine grained control 
     //over the availability of the winsock dll. Otherwise (your program needs ninttp until closing) it will get cleaned up and no resources will
     //be leaked
     inline std::expected<void, SocketError> deinitBackend() noexcept{
-        if(!SocketBase::backendInited)
+        if(!internal::backendInited)
             return {};
 
         auto deinitialized = internal::SelectedBackend::deinit();
         if(deinitialized.has_value()){
-            SocketBase::backendInited = false;
+            internal::backendInited = false;
             return {};
         }
 
         return std::unexpected{SocketError{deinitialized.error()}};
     }
-    #endif
 } // namespace ninttp
+#endif
