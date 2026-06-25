@@ -42,16 +42,19 @@ namespace ninttp
             /**
              * @brief Construct and open a listener socket for the endpoint family.
              *
-             * @throws SocketError If backend initialization fails, or if opening the native
-             * socket fails.
+             * @throws SocketError If backend initialization fails, if opening the native
+             * socket fails or if setting the option Ipv6Only for the Ipv6 version of the socket fails.
              */
             ListenerSocket(Protocol proto)
                 : SocketBase(internal::endpointDomain<EndpointT>, Service::Stream, proto)
             {
                 //TODO: maybe give a user option in the future to deactivate this, but for the fromStorage 
                 //converters to work without problems we currently deactivate it
-                if constexpr(std::same_as<EndpointT, IPv6Endpoint>)
-                    internal::SelectedBackend::setOption(this->handle_, internal::SocketOption::IPv6Only);
+                if constexpr(std::same_as<EndpointT, IPv6Endpoint>){
+                    auto changed = internal::SelectedBackend::setOption(this->handle_, internal::SocketOption::IPv6Only);
+                    if(!changed)
+                        throw SocketError{changed.error()};
+                }
             }
 
             //forward some of the methods to the public API

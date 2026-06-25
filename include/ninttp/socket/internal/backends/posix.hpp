@@ -9,12 +9,14 @@
 #include <optional>
 #include <span>
 
+#include <array>
 #include <cassert>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <cerrno>
-#include <cstring> // strerror
+#include <limits>
+#include <cstring> // strerror_r
 #include <string>
 #include <type_traits>
 #include <unistd.h>
@@ -310,6 +312,11 @@ namespace ninttp::internal
             }
 
             static std::expected<std::size_t, ErrorT> send(const SocketT& s, std::span<const char> data) noexcept{
+                if(data.size() > static_cast<std::size_t>(std::numeric_limits<ssize_t>::max()))
+                    return std::unexpected{EMSGSIZE};
+
+                //on linux and android (linux based), the signal SIGPIPE is raised if the peer closed the connection and we try sending
+                //bytes. We avoid handling it by passing the MSG_NOSIGNAL option
                 #if NINTTP_PLATFORM_LINUX == 1 || NINTTP_PLATFORM_ANDROID == 1
                 const auto sent = ::send(s, data.data(), data.size(), MSG_NOSIGNAL);
                 #else
@@ -333,7 +340,19 @@ namespace ninttp::internal
             static inline ErrorT getLastError() noexcept{ return static_cast<ErrorT>(errno); };
 
             static std::string getMsgFromError(const ErrorT& err){
-                return std::string(strerror(err));
+                std::array<char, 256> buffer{};
+                auto result = ::strerror_r(err, buffer.data(), buffer.size());
+
+                //strerror_r can change signature under certain conditions depending on feature flags of the linux kernel. We avoid 
+                //having to check for preprocessor flags by checking the return type at compile time and asserting behavior
+                if constexpr(std::is_same_v<decltype(result), char*>)
+                    return std::string(result);
+                else{
+                    if(result == 0)
+                        return std::string(buffer.data());
+
+                    return "Unknown POSIX error " + std::to_string(err);
+                }
             }
 
             //this is the only reliable way I found to be explicit about an invalidSocket when we assume they may not be copyable. Creating
