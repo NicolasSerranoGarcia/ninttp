@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include "nintraits.hpp"
@@ -60,6 +61,63 @@ namespace ninttp
 
         private:
             uint32_t address_ = 0;
+            uint16_t port_ = 0;
+    };
+
+    class IPv6Endpoint{
+        public:
+            using AddressBytes = std::array<std::uint8_t, 16>;
+
+            /**
+             * @brief Builds the IPv6 unspecified endpoint on port 0.
+             *
+             * @pre None.
+             * @post addressBytes() contains sixteen zero bytes.
+             * @post portHostOrder() == 0.
+             */
+            constexpr IPv6Endpoint() noexcept = default;
+
+            /**
+             * @brief Builds an IPv6 endpoint value.
+             *
+             * @pre addressBytes is encoded in network byte order, from the first IPv6 address
+             *      octet to the last one.
+             * @pre hostOrderPort is expressed in host byte order.
+             * @post addressBytes() == addressBytes.
+             * @post portHostOrder() == hostOrderPort.
+             */
+            constexpr IPv6Endpoint(AddressBytes addressBytes, uint16_t hostOrderPort) noexcept
+                : address_(addressBytes), port_(hostOrderPort){}
+
+            /**
+             * @brief Returns the IPv6 address bytes in network byte order.
+             *
+             * @pre None.
+             * @post The returned value contains sixteen bytes, from the first IPv6 address octet
+             *       to the last one.
+             */
+            constexpr AddressBytes addressBytes() const noexcept{
+                return address_;
+            }
+
+            /**
+             * @brief Returns the port in host byte order.
+             *
+             * @pre None.
+             * @post The returned value is in host byte order.
+             */
+            constexpr uint16_t portHostOrder() const noexcept{
+                return port_;
+            }
+
+            static constexpr inline IPv6Endpoint loopback(uint16_t hostOrderPort) noexcept{
+                AddressBytes bytes{};
+                bytes[15] = 1;
+                return IPv6Endpoint{bytes, hostOrderPort};
+            }
+
+        private:
+            AddressBytes address_{};
             uint16_t port_ = 0;
     };
 } // namespace ninttp
