@@ -1,6 +1,4 @@
 - State lifetime and invariants of the sockets
-- Document that close must not run concurrently with send, receive or native operations on the same socket wrapper
-- Handle accepted socket cleanup status when endpoint reconstruction fails in accept(). set IPV6ONLY for the template types to finish this
 - Finish basic version of the parsers and builders
 - tests for all types of http messages: malformed, methods, combinations of options...
 - change interface to use span, modules and maybe threads, coroutines or IPC.
