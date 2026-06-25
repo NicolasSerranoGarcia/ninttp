@@ -7,8 +7,13 @@ void client(){
 
     std::expected<ninttp::Response, ninttp::SocketError> got;
 
-    if(got = client.GET("/"); !got.has_value())
-        std::cout << got.error().msg() << std::endl;
+    if(got = client.GET("/"); !got.has_value()){
+        try{
+            std::cerr << got.error().msg() << std::endl;
+        } catch(const std::bad_alloc& err){
+            std::cerr << err.what() << std::endl;
+        }
+    }
 
     std::cout << got.value() << std::endl;
 }

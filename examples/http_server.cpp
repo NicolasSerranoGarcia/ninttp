@@ -1,8 +1,5 @@
 #include <iostream>
 
-#include <thread>
-using namespace std::literals;
-
 #include "../include/ninttp/http/http_server.hpp"
 
 void server(){
