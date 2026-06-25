@@ -16,6 +16,13 @@ namespace ninttp
 {
     using SocketBase = ninttp::internal::SocketCore<internal::SelectedBackend>;
 
+    namespace internal
+    {
+        template<typename EndpointT>
+        inline constexpr Domain endpointDomain =
+            std::same_as<EndpointT, IPv4Endpoint> ? Domain::IPv4 : Domain::IPv6;
+    } // namespace internal
+
     // ListenerSocket intentionally has no class-level requires clause. The useful
     // requirements belong to the operations:
     // - bind() needs the selected backend to translate EndpointT to native storage.
@@ -32,9 +39,14 @@ namespace ninttp
             "Listener socket only accepts IPv4 or IPv6 endpoints");
 
         public:
-            //we should forward the methods that we do want to use from SocketBase, like getters, release...
-            ListenerSocket(Domain domain, Protocol proto)
-                : SocketBase(domain, Service::Stream, proto)
+            /**
+             * @brief Construct and open a listener socket for the endpoint family.
+             *
+             * @throws SocketError If backend initialization fails, or if opening the native
+             * socket fails.
+             */
+            ListenerSocket(Protocol proto)
+                : SocketBase(internal::endpointDomain<EndpointT>, Service::Stream, proto)
             {
                 //TODO: maybe give a user option in the future to deactivate this, but for the fromStorage 
                 //converters to work without problems we currently deactivate it
@@ -77,7 +89,6 @@ namespace ninttp
                 if(!accepted.has_value())
                     return std::unexpected{SocketError{accepted.error()}};
 
-                //this is a type defined by us so we must guarantee no error whatsoever
                 auto endpoint = internal::SelectedBackend::template fromStorageUnchecked<EndpointT>(accepted->storage);
 
                 return ConnectedSocketT(
@@ -103,8 +114,14 @@ namespace ninttp
         friend class ListenerSocket;
 
         public:
-            StreamSocket(Domain domain, Protocol proto)
-                : SocketBase(domain, Service::Stream, proto){}
+            /**
+             * @brief Construct and open a stream socket for the endpoint family.
+             *
+             * @throws SocketError If backend initialization fails, or if opening the native
+             * socket fails.
+             */
+            StreamSocket(Protocol proto)
+                : SocketBase(internal::endpointDomain<EndpointT>, Service::Stream, proto){}
 
             using SocketBase::close;
             using SocketBase::domain;
@@ -138,7 +155,7 @@ namespace ninttp
                 return *sent;
             }
 
-            //concurrent use of a send function while closing the socket is currently not
+            //concurrent use of a receive function while closing the socket is currently not
             //supported and strongly disallowed as it can lead to fatal connection crashes.
             std::expected<size_t, SocketError> receive(std::span<char> buffer) noexcept{
                 auto got = internal::SelectedBackend::receive(handle_, buffer);

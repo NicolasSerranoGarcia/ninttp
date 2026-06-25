@@ -25,8 +25,13 @@ namespace ninttp
 
             httpClient() = delete;
 
+            /**
+             * @brief Construct a client and connect it to @p peer.
+             *
+             * @throws SocketError If stream socket construction or connection fails.
+             */
             httpClient(const EndpointT& peer)
-                : streamSock_(Domain::IPv4, Protocol::Tcp)
+                : streamSock_(Protocol::Tcp)
             {
                 if(const auto res = streamSock_.connect(peer); !res.has_value())
                     throw res.error();

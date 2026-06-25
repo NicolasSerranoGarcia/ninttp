@@ -29,8 +29,13 @@ namespace ninttp
 
             using GetHandlerT = std::function<void(Response&)>;
         
+            /**
+             * @brief Construct a server with an opened listener socket.
+             *
+             * @throws SocketError If listener socket construction fails.
+             */
             httpServer()
-                : listenerSock_(Domain::IPv4, Protocol::Tcp)
+                : listenerSock_(Protocol::Tcp)
             {}
 
             std::optional<SocketError> listen(const EndpointT& interf){

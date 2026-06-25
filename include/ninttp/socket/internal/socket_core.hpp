@@ -47,7 +47,14 @@ namespace ninttp::internal
             static_assert(std::is_nothrow_move_constructible_v<SocketT>, "SocketT must be nothrow move constructible");
             static_assert(std::is_nothrow_move_assignable_v<SocketT>, "SocketT must be nothrow move assignable");
 
-            //does not start a local descriptor, just like std::thread does
+            /**
+             * @brief Construct an empty socket core.
+             *
+             * Does not start a local descriptor, just like std::thread does.
+             *
+             * @throws SocketError If the selected backend requires initialization and that
+             * initialization fails.
+             */
             SocketCore()
                 : handle_(BackendT::invalidSocket()), domain_(Domain::Invalid), service_(Service::Invalid), proto_(Protocol::Invalid)
             {
@@ -57,7 +64,14 @@ namespace ninttp::internal
                 #endif
             };
 
-            //passing invalid casted values to any of the parameter types is undefined behavior
+            /**
+             * @brief Construct and open a native socket.
+             *
+             * Passing invalid casted values to any of the parameter types is undefined behavior.
+             *
+             * @throws SocketError If backend initialization fails, or if opening the native
+             * socket fails.
+             */
             SocketCore(Domain d, Service s, Protocol p)
                 : handle_(BackendT::invalidSocket()), domain_(d), service_(s), proto_(p)
             {
