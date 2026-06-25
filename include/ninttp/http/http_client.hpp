@@ -8,6 +8,7 @@
 #include "types.hpp"
 
 #include <array>
+#include <concepts>
 #include <vector>
 #include <expected>
 #include <utility>
@@ -17,6 +18,9 @@ namespace ninttp
 {
     template<httpVersion ver = http_1_0, typename EndpointT = IPv4Endpoint>
     class httpClient{
+        static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
+            "HTTP client only accepts IPv4 or IPv6 endpoints");
+
         public:
 
             httpClient() = delete;

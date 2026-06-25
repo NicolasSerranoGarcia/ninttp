@@ -1,9 +1,6 @@
 - State lifetime and invariants of the sockets
 - Document that close must not run concurrently with send, receive or native operations on the same socket wrapper
-- Fix move assignment potential leak when the previous socket state cannot be closed by the destructor. As there is the replace method that explicitly returns an error, just document about it. It is the same case as the stl containers: it is bad practice that operators throw, this is why [] is unchecked for all containers, but .at is not and throws an exception
-- Fix destructor cleanup when winsock close keeps returning Retry until the retry budget is exhausted
-- Make destructor close diagnostics non throwing
-- Handle accepted socket cleanup status when endpoint reconstruction fails in accept()
+- Handle accepted socket cleanup status when endpoint reconstruction fails in accept(). set IPV6ONLY for the template types to finish this
 - Finish basic version of the parsers and builders
 - tests for all types of http messages: malformed, methods, combinations of options...
 - change interface to use span, modules and maybe threads, coroutines or IPC.

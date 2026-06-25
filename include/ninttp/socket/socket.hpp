@@ -26,10 +26,21 @@ namespace ninttp
     // will call terminate if the constructor throws
     template<typename EndpointT, typename ConnectedSocketT>
     class ListenerSocket : protected SocketBase{
+
+        //A concept is useless here because there is no beahivoral check, but rather expecting just two types of endpoints
+        static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
+            "Listener socket only accepts IPv4 or IPv6 endpoints");
+
         public:
             //we should forward the methods that we do want to use from SocketBase, like getters, release...
             ListenerSocket(Domain domain, Protocol proto)
-                : SocketBase(domain, Service::Stream, proto){}
+                : SocketBase(domain, Service::Stream, proto)
+            {
+                //TODO: maybe give a user option in the future to deactivate this, but for the fromStorage 
+                //converters to work without problems we currently deactivate it
+                if constexpr(std::same_as<EndpointT, IPv6Endpoint>)
+                    internal::SelectedBackend::setOption(this->handle_, internal::SocketOption::IPv6Only);
+            }
 
             //forward some of the methods to the public API
             using SocketBase::close;
@@ -66,18 +77,15 @@ namespace ninttp
                 if(!accepted.has_value())
                     return std::unexpected{SocketError{accepted.error()}};
 
-                auto endpoint = internal::SelectedBackend::template fromStorage<EndpointT>(accepted->storage);
-                if(!endpoint.has_value()){
-                    internal::SelectedBackend::closeSocket(accepted->socket);
-                    return std::unexpected{SocketError{endpoint.error()}};
-                }
+                //this is a type defined by us so we must guarantee no error whatsoever
+                auto endpoint = internal::SelectedBackend::template fromStorageUnchecked<EndpointT>(accepted->storage);
 
                 return ConnectedSocketT(
                     accepted->socket,
                     domain_,
                     service_,
                     proto_,
-                    *endpoint);
+                    endpoint);
             }
     };
 
@@ -86,6 +94,9 @@ namespace ninttp
     // - accept() needs the selected backend to rebuild EndpointT from native storage.
     template<typename EndpointT>
     class StreamSocket : protected SocketBase{
+        static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
+            "Stream socket only accepts IPv4 or IPv6 endpoints");
+
         // Connected socket extensions with a private adoption constructor must
         // grant ListenerSocket the same friendship to be accepted by it.
         template<typename, typename>
@@ -117,6 +128,8 @@ namespace ninttp
                 return {};
             }
 
+            //concurrent use of a send function while closing the socket is currently not
+            //supported and strongly disallowed as it can lead to fatal connection crashes.
             std::expected<size_t, SocketError> send(std::span<const char> data) noexcept{
                 auto sent = internal::SelectedBackend::send(handle_, data);
                 if(!sent.has_value())
@@ -125,6 +138,8 @@ namespace ninttp
                 return *sent;
             }
 
+            //concurrent use of a send function while closing the socket is currently not
+            //supported and strongly disallowed as it can lead to fatal connection crashes.
             std::expected<size_t, SocketError> receive(std::span<char> buffer) noexcept{
                 auto got = internal::SelectedBackend::receive(handle_, buffer);
                 if(!got.has_value())

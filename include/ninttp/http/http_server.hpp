@@ -8,6 +8,7 @@
 #include "types.hpp"
 
 #include <array>
+#include <concepts>
 #include <vector>
 #include <unordered_map>
 #include <functional>
@@ -21,6 +22,9 @@ namespace ninttp
     //1.0
     template<httpVersion ver = http_1_0, typename EndpointT = IPv4Endpoint>
     class httpServer{
+        static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
+            "HTTP server only accepts IPv4 or IPv6 endpoints");
+
         public:
 
             using GetHandlerT = std::function<void(Response&)>;

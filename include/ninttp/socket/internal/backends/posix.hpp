@@ -9,6 +9,7 @@
 #include <optional>
 #include <span>
 
+#include <cassert>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -150,6 +151,34 @@ namespace ninttp::internal
                 return {};
             };
 
+            static std::expected<void, ErrorT> setOption(const SocketT& s, SocketOption option) noexcept{
+                switch(option){
+                    case SocketOption::IPv6Only: {
+                        const int nativeValue = 1;
+                        if(::setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, &nativeValue, sizeof(nativeValue)) != 0)
+                            return std::unexpected{getLastError()};
+
+                        return {};
+                    }
+                }
+
+                return std::unexpected{EOPNOTSUPP};
+            }
+
+            static std::expected<void, ErrorT> unsetOption(const SocketT& s, SocketOption option) noexcept{
+                switch(option){
+                    case SocketOption::IPv6Only: {
+                        const int nativeValue = 0;
+                        if(::setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, &nativeValue, sizeof(nativeValue)) != 0)
+                            return std::unexpected{getLastError()};
+
+                        return {};
+                    }
+                }
+
+                return std::unexpected{EOPNOTSUPP};
+            }
+
             static std::expected<void, ErrorT> bind(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
                 if(::bind(s, reinterpret_cast<const sockaddr*>(addr), len) != 0)
                     return std::unexpected{getLastError()};
@@ -207,6 +236,23 @@ namespace ninttp::internal
                 return static_cast<AddressLenT>(sizeof(sockaddr_in));
             }
 
+            static AddressStorageT toStorage(const ninttp::IPv6Endpoint& endpoint) noexcept{
+                sockaddr_in6 native{};
+                native.sin6_family = AF_INET6;
+                native.sin6_port = ninttp::hostToNetwork16(endpoint.portHostOrder());
+
+                const auto bytes = endpoint.addressBytes();
+                std::memcpy(&native.sin6_addr.s6_addr, bytes.data(), bytes.size());
+
+                AddressStorageT storage{};
+                std::memcpy(&storage, &native, sizeof(native));
+                return storage;
+            }
+
+            static constexpr AddressLenT storageLen(const ninttp::IPv6Endpoint&) noexcept{
+                return static_cast<AddressLenT>(sizeof(sockaddr_in6));
+            }
+
             template<typename EndpointT>
             static std::expected<EndpointT, ErrorT> fromStorage(const AddressStorageT& storage) noexcept{
                 if constexpr(std::same_as<EndpointT, ninttp::IPv4Endpoint>){
@@ -218,8 +264,48 @@ namespace ninttp::internal
                     return ninttp::IPv4Endpoint(
                         ninttp::networkToHost32(native.sin_addr.s_addr),
                         ninttp::networkToHost16(native.sin_port));
+                }else if constexpr(std::same_as<EndpointT, ninttp::IPv6Endpoint>){
+                    if(storage.ss_family != AF_INET6)
+                        return std::unexpected{EAFNOSUPPORT};
+
+                    sockaddr_in6 native{};
+                    std::memcpy(&native, &storage, sizeof(native));
+
+                    ninttp::IPv6Endpoint::AddressBytes bytes{};
+                    std::memcpy(bytes.data(), &native.sin6_addr.s6_addr, bytes.size());
+                    return ninttp::IPv6Endpoint(
+                        bytes,
+                        ninttp::networkToHost16(native.sin6_port));
                 }else{
-                    static_assert(std::same_as<EndpointT, ninttp::IPv4Endpoint>, "Unsupported endpoint type");
+                    static_assert(std::same_as<EndpointT, ninttp::IPv4Endpoint>
+                        || std::same_as<EndpointT, ninttp::IPv6Endpoint>, "Unsupported endpoint type");
+                }
+            }
+
+            template<typename EndpointT>
+            static EndpointT fromStorageUnchecked(const AddressStorageT& storage) noexcept{
+                if constexpr(std::same_as<EndpointT, ninttp::IPv4Endpoint>){
+                    assert(storage.ss_family == AF_INET);
+
+                    sockaddr_in native{};
+                    std::memcpy(&native, &storage, sizeof(native));
+                    return ninttp::IPv4Endpoint(
+                        ninttp::networkToHost32(native.sin_addr.s_addr),
+                        ninttp::networkToHost16(native.sin_port));
+                }else if constexpr(std::same_as<EndpointT, ninttp::IPv6Endpoint>){
+                    assert(storage.ss_family == AF_INET6);
+
+                    sockaddr_in6 native{};
+                    std::memcpy(&native, &storage, sizeof(native));
+
+                    ninttp::IPv6Endpoint::AddressBytes bytes{};
+                    std::memcpy(bytes.data(), &native.sin6_addr.s6_addr, bytes.size());
+                    return ninttp::IPv6Endpoint(
+                        bytes,
+                        ninttp::networkToHost16(native.sin6_port));
+                }else{
+                    static_assert(std::same_as<EndpointT, ninttp::IPv4Endpoint>
+                        || std::same_as<EndpointT, ninttp::IPv6Endpoint>, "Unsupported endpoint type");
                 }
             }
 

@@ -18,6 +18,10 @@ namespace ninttp::internal {
         Unspecified
     };
 
+    enum class SocketOption {
+        IPv6Only
+    };
+
     template<typename ErrorT>
     struct SocketCloseStatus {
         SocketCloseDisposition disposition;
@@ -66,6 +70,7 @@ namespace ninttp::internal {
                     Service service,
                     Protocol protocol,
                     ShutdownPolicy what,
+                    SocketOption option,
                     int backlog,
                     const typename Backend::AddressStorageT* addr,
                     typename Backend::AddressLenT addrLen,
@@ -84,6 +89,19 @@ namespace ninttp::internal {
             { Backend::shutdownSocket(socket, what) } noexcept
                 -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
 
+            /*
+             * Socket option API note:
+             *
+             * This shape intentionally mirrors POSIX/Winsock setsockopt for now: a native socket
+             * and an enum describing the option. It may change in the future if
+             * ninttp gains backends whose option model does not map directly to setsockopt, or if
+             * options need typed payloads instead of enable/disable operations.
+             */
+            { Backend::setOption(socket, option) } noexcept
+                -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
+            { Backend::unsetOption(socket, option) } noexcept
+                -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
+
             { Backend::bind(socket, addr, addrLen) } noexcept
                 -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
             { Backend::listen(socket, backlog) } noexcept
@@ -93,10 +111,34 @@ namespace ninttp::internal {
             { Backend::connect(socket, addr, addrLen) } noexcept
                 -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
 
+            /*
+             * Address conversion contract:
+             *
+             * fromStorage() and fromStorageUnchecked() assume that the storage object contains
+             * a well-formed native address matching the endpoint type being requested. Passing
+             * storage that claims to be IPv4 while actually containing a sockaddr_in6, or storage
+             * whose bytes/family were manually tweaked into an incoherent state, is erroneous use
+             * of the backend API and gives these functions undefined behavior.
+             *
+             * For future, more general backend use, AddressStorageT may need to carry the address
+             * size together with the storage bytes so checked conversions can validate both family
+             * and length. That design also has to be treated carefully: a caller-provided length
+             * can itself be tweaked or misinterpreted, so it would only strengthen validation for
+             * truly external/native inputs, not replace the invariant that accepted storage is
+             * produced by the backend.
+             */
             { Backend::toStorage(ninttp::IPv4Endpoint{}) } noexcept -> std::same_as<typename Backend::AddressStorageT>;
             { Backend::storageLen(ninttp::IPv4Endpoint{}) } noexcept -> std::convertible_to<typename Backend::AddressLenT>;
             { Backend::template fromStorage<ninttp::IPv4Endpoint>(*addr) } noexcept
                 -> std::same_as<std::expected<ninttp::IPv4Endpoint, typename Backend::ErrorT>>;
+            { Backend::template fromStorageUnchecked<ninttp::IPv4Endpoint>(*addr) } noexcept
+                -> std::same_as<ninttp::IPv4Endpoint>;
+            { Backend::toStorage(ninttp::IPv6Endpoint{}) } noexcept -> std::same_as<typename Backend::AddressStorageT>;
+            { Backend::storageLen(ninttp::IPv6Endpoint{}) } noexcept -> std::convertible_to<typename Backend::AddressLenT>;
+            { Backend::template fromStorage<ninttp::IPv6Endpoint>(*addr) } noexcept
+                -> std::same_as<std::expected<ninttp::IPv6Endpoint, typename Backend::ErrorT>>;
+            { Backend::template fromStorageUnchecked<ninttp::IPv6Endpoint>(*addr) } noexcept
+                -> std::same_as<ninttp::IPv6Endpoint>;
 
             { Backend::send(socket, sendBuffer) } noexcept
                 -> std::same_as<std::expected<std::size_t, typename Backend::ErrorT>>;
