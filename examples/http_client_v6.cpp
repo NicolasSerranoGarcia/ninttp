@@ -2,19 +2,21 @@
 
 #include "../include/ninttp/http/http_client.hpp"
 
-void clientV6  (){
+using namespace ninttp;
+
+void clientV6(){
 
     try{
-        ninttp::httpClient<ninttp::IPv6Endpoint> clientV6(ninttp::IPv6Endpoint::loopback(8080));
+        httpClient<http_1_0, IPv6Endpoint> clientV6(IPv6Endpoint::loopback(8080));
 
-        std::expected<ninttp::Response, ninttp::SocketError> got;
+        std::expected<Response, SocketError> got;
 
-        if(got = clientV6  .GET("/"); !got.has_value())
+        if(got = clientV6.GET("/"); !got.has_value())
             std::cerr << got.error().msg() << std::endl;
 
         std::cout << got.value() << std::endl;
 
-    } catch(ninttp::SocketError& err){
+    } catch(SocketError& err){
         std::cerr << err.msg();
     } catch(std::bad_alloc& allocErr){
         std::cerr << allocErr.what();
@@ -22,5 +24,5 @@ void clientV6  (){
 }
 
 int main(){
-    clientV6   ();
+    clientV6();
 }

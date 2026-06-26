@@ -1,7 +1,7 @@
 add_executable(http_client http_client.cpp)
 add_executable(http_server http_server.cpp)
-add_executable(http_server_v6 http_server.cpp)
-add_executable(http_client_v6 http_client.cpp)
+add_executable(http_server_v6 http_server_v6.cpp)
+add_executable(http_client_v6 http_client_v6.cpp)
 
 target_compile_features(http_client
     PRIVATE
