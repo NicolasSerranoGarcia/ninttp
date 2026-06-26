@@ -24,11 +24,11 @@ namespace ninttp
     struct SocketError{
         using ErrorT = internal::SelectedBackend::ErrorT;
         /**
-         * @brief Builds a SocketError instance from an optional context and the location of the caller
-         * @param context Optional context string
-         * @param location Source location of the caller
-         * @note it is safe to pass @c nullptr to @p context
-         * @details source_location is not specified to be constexpr nor consteval so we can't mark this constructor as such
+         * @brief Builds a SocketError instance from a native backend error.
+         *
+         * @param err Native backend error code.
+         * @param location Source location of the caller.
+         * @details source_location is not specified to be constexpr nor consteval so we can't mark this constructor as such.
          */
         SocketError(const ErrorT& err, const std::source_location& location = std::source_location::current()) noexcept
             : err_(err), location_(location){}
@@ -36,17 +36,22 @@ namespace ninttp
         /**
          * @brief Returns a comprehensive error message combining the location and the context given in construction
          * @return The message composed from the call-site function and the optional context
-         * @details SocketError::msg() can be verbose. If you prefer to handle the error yourself, you may want to consult the nativeError_ code.
+         * @details SocketError::msg() can be verbose. If you prefer to handle the error yourself, you may want to consult the err_ code.
          * On unix platforms comes from errno, for example.
          */
-        std::string msg() const{
+        [[nodiscard]] std::string msg() const{
             std::string out{location_.function_name()};
             out += ": ";
             out += internal::SelectedBackend::getMsgFromError(err_);
             return out;
         }
 
-        std::string context() const{
+        /**
+         * @brief Returns the backend-formatted native error message without call-site context.
+         *
+         * @return Message produced from the native backend error code.
+         */
+        [[nodiscard]] std::string context() const{
             return internal::SelectedBackend::getMsgFromError(err_);
         }
 

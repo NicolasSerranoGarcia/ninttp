@@ -37,7 +37,7 @@ namespace ninttp
              * @post The returned value is encoded as 0xAABBCCDD for address
              *       AA.BB.CC.DD.
              */
-            constexpr uint32_t addressHostOrder() const noexcept{
+            [[nodiscard]] constexpr uint32_t addressHostOrder() const noexcept{
                 return address_;
             }
 
@@ -47,16 +47,12 @@ namespace ninttp
              * @pre None.
              * @post The returned value is in host byte order.
              */
-            constexpr uint16_t portHostOrder() const noexcept{
+            [[nodiscard]] constexpr uint16_t portHostOrder() const noexcept{
                 return port_;
             }
 
-            static constexpr inline IPv4Endpoint loopback(uint16_t hostOrderPort){
-                #if NINTTP_BYTE_ORDER == NINTTP_LITTLE_ENDIAN
+            [[nodiscard]] static constexpr inline IPv4Endpoint loopback(uint16_t hostOrderPort) noexcept{
                 return IPv4Endpoint{0x7F000001u, hostOrderPort};
-                #elif NINTTP_BYTE_ORDER == NINTTP_BIG_ENDIAN
-                return IPv4Endpoint{0x0100007Fu, hostOrderPort};
-                #endif
             }
 
         private:
@@ -96,7 +92,7 @@ namespace ninttp
              * @post The returned value contains sixteen bytes, from the first IPv6 address octet
              *       to the last one.
              */
-            constexpr AddressBytes addressBytes() const noexcept{
+            [[nodiscard]] constexpr AddressBytes addressBytes() const noexcept{
                 return address_;
             }
 
@@ -106,11 +102,11 @@ namespace ninttp
              * @pre None.
              * @post The returned value is in host byte order.
              */
-            constexpr uint16_t portHostOrder() const noexcept{
+            [[nodiscard]] constexpr uint16_t portHostOrder() const noexcept{
                 return port_;
             }
 
-            static constexpr inline IPv6Endpoint loopback(uint16_t hostOrderPort) noexcept{
+            [[nodiscard]] static constexpr inline IPv6Endpoint loopback(uint16_t hostOrderPort) noexcept{
                 AddressBytes bytes{};
                 bytes[15] = 1;
                 return IPv6Endpoint{bytes, hostOrderPort};

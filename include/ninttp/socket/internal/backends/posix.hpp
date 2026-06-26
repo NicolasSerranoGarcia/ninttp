@@ -1,3 +1,14 @@
+/**
+ * @file posix.hpp
+ * @author Nicolas Serrano (serranogarcianicolas@gmail.com)
+ * @brief Defines the POSIX socket backend implementation.
+ * @version 0.1
+ * @date 2026-06-26
+ *
+ * @copyright Copyright (c) 2026 Nicolas Serrano Garcia
+ *
+ */
+
 #pragma once
 
 #include "../../../endpoints.hpp"
@@ -5,6 +16,7 @@
 #include "../../types.hpp"
 #include "../../utils.hpp"
 
+#include <concepts>
 #include <expected>
 #include <optional>
 #include <span>
@@ -19,7 +31,6 @@
 #include <limits>
 #include <cstring> // strerror_r
 #include <string>
-#include <type_traits>
 #include <unistd.h>
 
 
@@ -95,6 +106,9 @@ namespace ninttp::internal
         }
     }
 
+    /**
+     * @brief POSIX implementation of the SocketBackend contract.
+     */
     class PosixBackend{
         public:
             using SocketT = int;
@@ -109,6 +123,12 @@ namespace ninttp::internal
                 AddressLenT len;
             };
 
+            /**
+             * @brief Enables close-on-exec for a native descriptor when configured.
+             *
+             * @param s Native POSIX socket descriptor.
+             * @return Empty result on success, or errno captured from fcntl().
+             */
             static std::expected<void, ErrorT> setCloseOnExec(const SocketT& s) noexcept{
                 #if NINTTP_FD_CLOSE_EXEC == 1
                 const int flags = ::fcntl(s, F_GETFD);
@@ -161,6 +181,12 @@ namespace ninttp::internal
                 return socket;
             };
 
+            /**
+             * @brief Closes a native POSIX socket descriptor.
+             *
+             * @param s Native POSIX socket descriptor.
+             * @return Ownership disposition and optional errno captured from close().
+             */
             static CloseStatusT closeSocket(const SocketT& s) noexcept{
                 if(::close(s) == 0)
                     return {SocketCloseDisposition::Released, std::nullopt};
@@ -180,8 +206,16 @@ namespace ninttp::internal
                 #endif
             };
             
+            /**
+             * @brief Checks whether a descriptor is not the backend invalid sentinel.
+             */
             static constexpr bool isUsableSocket(const SocketT& s) noexcept{ return s != invalidSocket(); };
             
+            /**
+             * @brief Applies native shutdown() to the socket.
+             *
+             * @return Empty result on success, or errno captured from shutdown().
+             */
             static std::expected<void, ErrorT> shutdownSocket(const SocketT& s, ShutdownPolicy what) noexcept{
                 if(::shutdown(s, toNativeShutdownPolicy(what)) != 0)
                     return std::unexpected{getLastError()};
@@ -189,6 +223,12 @@ namespace ninttp::internal
                 return {};
             };
 
+            /**
+             * @brief Enables a supported socket option.
+             *
+             * @return Empty result on success, EOPNOTSUPP for unknown options, or errno from
+             * setsockopt().
+             */
             static std::expected<void, ErrorT> setOption(const SocketT& s, SocketOption option) noexcept{
                 switch(option){
                     case SocketOption::IPv6Only: {
@@ -203,6 +243,12 @@ namespace ninttp::internal
                 return std::unexpected{EOPNOTSUPP};
             }
 
+            /**
+             * @brief Disables a supported socket option.
+             *
+             * @return Empty result on success, EOPNOTSUPP for unknown options, or errno from
+             * setsockopt().
+             */
             static std::expected<void, ErrorT> unsetOption(const SocketT& s, SocketOption option) noexcept{
                 switch(option){
                     case SocketOption::IPv6Only: {
@@ -217,6 +263,11 @@ namespace ninttp::internal
                 return std::unexpected{EOPNOTSUPP};
             }
 
+            /**
+             * @brief Binds a native socket descriptor to a native address.
+             *
+             * @return Empty result on success, or errno captured from bind().
+             */
             static std::expected<void, ErrorT> bind(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
                 if(::bind(s, reinterpret_cast<const sockaddr*>(addr), len) != 0)
                     return std::unexpected{getLastError()};
@@ -224,6 +275,11 @@ namespace ninttp::internal
                 return {};
             }
 
+            /**
+             * @brief Marks a bound native socket as a listener.
+             *
+             * @return Empty result on success, or errno captured from listen().
+             */
             static std::expected<void, ErrorT> listen(const SocketT& s, int backlog) noexcept{
                 if(::listen(s, backlog) != 0)
                     return std::unexpected{getLastError()};
@@ -274,6 +330,11 @@ namespace ninttp::internal
                 return AddressBundleT{sock, storage, len};
             }
 
+            /**
+             * @brief Connects a native socket descriptor to a native address.
+             *
+             * @return Empty result on success, or errno captured from connect().
+             */
             static std::expected<void, ErrorT> connect(const SocketT& s, const AddressStorageT* addr, AddressLenT len) noexcept{
                 if(::connect(s, reinterpret_cast<const sockaddr*>(addr), len) != 0)
                     return std::unexpected{getLastError()};
@@ -281,6 +342,9 @@ namespace ninttp::internal
                 return {};
             }
 
+            /**
+             * @brief Converts an IPv4 endpoint to POSIX address storage.
+             */
             static AddressStorageT toStorage(const ninttp::IPv4Endpoint& endpoint) noexcept{
                 sockaddr_in native{};
                 native.sin_family = AF_INET;
@@ -296,6 +360,9 @@ namespace ninttp::internal
                 return static_cast<AddressLenT>(sizeof(sockaddr_in));
             }
 
+            /**
+             * @brief Converts an IPv6 endpoint to POSIX address storage.
+             */
             static AddressStorageT toStorage(const ninttp::IPv6Endpoint& endpoint) noexcept{
                 sockaddr_in6 native{};
                 native.sin6_family = AF_INET6;
@@ -313,6 +380,12 @@ namespace ninttp::internal
                 return static_cast<AddressLenT>(sizeof(sockaddr_in6));
             }
 
+            /**
+             * @brief Converts native storage to an endpoint after checking the address family.
+             *
+             * @return Endpoint on success, or EAFNOSUPPORT if the storage family does not match
+             * EndpointT.
+             */
             template<typename EndpointT>
             static std::expected<EndpointT, ErrorT> fromStorage(const AddressStorageT& storage) noexcept{
                 if constexpr(std::same_as<EndpointT, ninttp::IPv4Endpoint>){
@@ -342,6 +415,12 @@ namespace ninttp::internal
                 }
             }
 
+            /**
+             * @brief Converts native storage to an endpoint under a trusted-family invariant.
+             *
+             * The address family is asserted in debug builds. Passing storage with a different
+             * family is invalid use of the backend contract.
+             */
             template<typename EndpointT>
             static EndpointT fromStorageUnchecked(const AddressStorageT& storage) noexcept{
                 if constexpr(std::same_as<EndpointT, ninttp::IPv4Endpoint>){
@@ -369,6 +448,11 @@ namespace ninttp::internal
                 }
             }
 
+            /**
+             * @brief Sends bytes once through a native POSIX socket.
+             *
+             * @return Number of bytes sent, or EMSGSIZE/native errno on failure.
+             */
             static std::expected<std::size_t, ErrorT> send(const SocketT& s, std::span<const char> data) noexcept{
                 if(data.size() > static_cast<std::size_t>(std::numeric_limits<ssize_t>::max()))
                     return std::unexpected{EMSGSIZE};
@@ -386,6 +470,11 @@ namespace ninttp::internal
                 return static_cast<std::size_t>(sent);
             }
 
+            /**
+             * @brief Receives bytes once from a native POSIX socket.
+             *
+             * @return Number of bytes received, or errno captured from recv().
+             */
             static std::expected<std::size_t, ErrorT> receive(const SocketT& s, std::span<char> buffer) noexcept{
                 const auto received = ::recv(s, buffer.data(), buffer.size(), 0);
                 if(received == -1)
@@ -394,9 +483,14 @@ namespace ninttp::internal
                 return static_cast<std::size_t>(received);
             }
 
-            //native error code
+            /**
+             * @brief Returns the current thread's errno value.
+             */
             static inline ErrorT getLastError() noexcept{ return static_cast<ErrorT>(errno); };
 
+            /**
+             * @brief Formats a native POSIX error code as a string.
+             */
             static std::string getMsgFromError(const ErrorT& err){
                 std::array<char, 256> buffer{};
                 return msgFromStrerrorResult(
@@ -405,8 +499,9 @@ namespace ninttp::internal
                     ::strerror_r(err, buffer.data(), buffer.size()));
             }
 
-            //this is the only reliable way I found to be explicit about an invalidSocket when we assume they may not be copyable. Creating
-            //an instance guarantees no copy
+            /**
+             * @brief Returns the invalid descriptor sentinel.
+             */
             static constexpr inline SocketT invalidSocket() noexcept{ return static_cast<SocketT>(-1); }
 
         private:
