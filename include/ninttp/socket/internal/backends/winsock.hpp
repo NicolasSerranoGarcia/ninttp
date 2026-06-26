@@ -322,6 +322,12 @@ namespace ninttp::internal
              * match EndpointT.
              */
             template<typename EndpointT>
+            /**
+             * @brief Converts native storage to an endpoint after checking the address family.
+             *
+             * @return Endpoint on success, or WSAEAFNOSUPPORT if the storage family does not
+             * match EndpointT.
+             */
             static std::expected<EndpointT, ErrorT> fromStorage(const AddressStorageT& storage) noexcept{
                 if constexpr(std::same_as<EndpointT, IPv4Endpoint>){
                     if(storage.ss_family != AF_INET)
@@ -357,6 +363,12 @@ namespace ninttp::internal
              * family is invalid use of the backend contract.
              */
             template<typename EndpointT>
+            /**
+             * @brief Converts native storage to an endpoint under a trusted-family invariant.
+             *
+             * The address family is asserted in debug builds. Passing storage with a different
+             * family is invalid use of the backend contract.
+             */
             static EndpointT fromStorageUnchecked(const AddressStorageT& storage) noexcept{
                 if constexpr(std::same_as<EndpointT, IPv4Endpoint>){
                     assert(storage.ss_family == AF_INET);
