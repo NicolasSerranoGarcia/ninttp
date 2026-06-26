@@ -170,6 +170,20 @@ namespace ninttp
                 return *sent;
             }
 
+            std::expected<void, SocketError> sendAll(std::span<const char> data) noexcept{
+                while(!data.empty()){
+                    auto sent = this->send(data);
+                    if(!sent.has_value())
+                        return std::unexpected{sent.error()};
+
+                    assert(*sent != 0);
+
+                    data = data.subspan(*sent);
+                }
+
+                return {};
+            }
+
             //concurrent use of a receive function while closing the socket is currently not
             //supported and strongly disallowed as it can lead to fatal connection crashes.
             std::expected<size_t, SocketError> receive(std::span<char> buffer) noexcept{

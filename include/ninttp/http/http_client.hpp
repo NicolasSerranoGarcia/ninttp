@@ -43,7 +43,8 @@ namespace ninttp
                 //Use string views and spans for interrfaces
                 std::string request = std::string("GET ") + resource + std::string(" ") +
                                     ver.toHeaderString() + std::string("\r\n\r\n");
-                streamSock_.send(request);
+                if(auto sent = streamSock_.sendAll(std::span<const char>{request.data(), request.size()}); !sent.has_value())
+                    return std::unexpected{sent.error()};
 
                 std::string got;
 

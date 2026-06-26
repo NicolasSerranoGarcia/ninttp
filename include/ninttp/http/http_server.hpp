@@ -154,7 +154,8 @@ namespace ninttp
 
                         //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
                         //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
-                        streamSock.send(responseStr);
+                        if(auto sent = streamSock.sendAll(std::span<const char>{responseStr.data(), responseStr.size()}); !sent.has_value())
+                            return std::move(sent.error());
                     } else{
                         //send a 404
                     }
