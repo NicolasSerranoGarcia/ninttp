@@ -28,8 +28,8 @@
 namespace ninttp::internal
 {
     #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-    static constinit inline std::once_flag flagInited{};
-    static constinit inline bool backendInited = false;
+    constinit inline std::once_flag backendInitOnce{};
+    constinit inline bool backendInited = false;
     #endif
 
     //on this level of abstraction, any socket can be interchanged, moved from to others. Here we define move, swap, release, acquire, but that doesn't mean that 
@@ -61,8 +61,7 @@ namespace ninttp::internal
                 : handle_(BackendT::invalidSocket()), domain_(Domain::Invalid), service_(Service::Invalid), proto_(Protocol::Invalid)
             {
                 #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-                if(auto initialized = SocketCore::initBackend(); !initialized.has_value())
-                    throw initialized.error();
+                SocketCore::initBackend();
                 #endif
             };
 
@@ -78,8 +77,7 @@ namespace ninttp::internal
                 : handle_(BackendT::invalidSocket()), domain_(d), service_(s), proto_(p)
             {
                 #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-                if(auto initialized = SocketCore::initBackend(); !initialized.has_value())
-                    throw initialized.error();
+                SocketCore::initBackend();
                 #endif
 
                 auto opened = BackendT::openSocket(d, s, p);
@@ -248,16 +246,23 @@ namespace ninttp::internal
             }
             
             #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
-            static std::expected<void, SocketError> initBackend() noexcept{
-                if(backendInited)
-                    return {};
+            /**
+             * @brief Initialize the selected backend once for the process.
+             *
+             * std::call_once marks the backend as initialized only if the initialization callable
+             * returns normally. If backend initialization fails, this function throws and a later
+             * socket construction may retry initialization.
+             *
+             * @throws SocketError If backend initialization fails.
+             */
+            static void initBackend(){
+                std::call_once(backendInitOnce, []{
+                    auto initialized = BackendT::init();
+                    if(!initialized.has_value())
+                        throw SocketError{initialized.error()};
 
-                auto initialized = BackendT::init();
-                if(!initialized.has_value())
-                    return std::unexpected{SocketError{initialized.error()}};
-
-                backendInited = true;
-                return {};
+                    backendInited = true;
+                });
             }
             #endif
     };
@@ -265,10 +270,21 @@ namespace ninttp::internal
 
 #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
 namespace ninttp {
-    //this function is completely optional (and personally I would not use it) unless for very specific reasons. One of them might be
-    //that you are on windows, using Winsock, and you are doing additional OS API level programming, and you need fine grained control 
-    //over the availability of the winsock dll. Otherwise (your program needs ninttp until closing) it will get cleaned up and no resources will
-    //be leaked
+    /**
+     * @brief Deinitialize the socket backend after explicit backend lifetime management.
+     *
+     * This function is optional and intended for specific cases where the program needs fine
+     * grained control over the backend lifetime, such as direct Winsock API use on Windows.
+     *
+     * - Do not call this while any ninttp socket objects are alive.
+     * - Do not call this concurrently with socket construction or other deinitialization calls.
+     * - Backend initialization is one-shot; after successful deinitialization, ninttp will not
+     *   reinitialize the backend in the same process because the std::once_flag cannot be reset.
+     *
+     * TODO: Consider replacing this manual contract with reference-counted backend lifetime.
+     *
+     * @return Empty result on success, or the backend deinitialization error.
+     */
     inline std::expected<void, SocketError> deinitBackend() noexcept{
         if(!internal::backendInited)
             return {};
