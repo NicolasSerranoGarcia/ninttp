@@ -108,6 +108,15 @@ namespace ninttp::internal
                 AddressLenT len;
             };
 
+            /**
+             * @brief Opens a native POSIX socket and applies required backend invariants.
+             *
+             * On BSD/Apple, SIGPIPE suppression is part of the backend invariant. If applying
+             * that option fails after the socket has been opened, this function closes the socket
+             * before returning the option error. That cleanup close is best effort: in the worst
+             * ambiguous-close case, the socket may leak because there is no place in this return
+             * type to report both the option failure and an uncertain cleanup result.
+             */
             static std::expected<SocketT, ErrorT> openSocket(Domain d, Service s, Protocol p) noexcept{
                 const SocketT socket = static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
                 if(socket == invalidSocket())
@@ -195,6 +204,16 @@ namespace ninttp::internal
                 return {};
             }
 
+            /**
+             * @brief Accepts a native POSIX connection and applies required backend invariants.
+             *
+             * On BSD/Apple, SIGPIPE suppression is part of the backend invariant for accepted
+             * sockets. If applying that option fails after accept() has returned a socket, this
+             * function closes the accepted socket before returning the option error. That cleanup
+             * close is best effort: in the worst ambiguous-close case, the accepted socket may
+             * leak because there is no place in this return type to report both the option failure
+             * and an uncertain cleanup result.
+             */
             static std::expected<AddressBundleT, ErrorT> accept(const SocketT& s) noexcept{
                 AddressStorageT storage{};
                 AddressLenT len = sizeof(storage);
@@ -341,23 +360,33 @@ namespace ninttp::internal
 
             static std::string getMsgFromError(const ErrorT& err){
                 std::array<char, 256> buffer{};
-                auto result = ::strerror_r(err, buffer.data(), buffer.size());
-
-                //strerror_r can change signature under certain conditions depending on feature flags of the linux kernel. We avoid 
-                //having to check for preprocessor flags by checking the return type at compile time and asserting behavior
-                if constexpr(std::is_same_v<decltype(result), char*>)
-                    return std::string(result);
-                else{
-                    if(result == 0)
-                        return std::string(buffer.data());
-
-                    return "Unknown POSIX error " + std::to_string(err);
-                }
+                return msgFromStrerrorResult(
+                    err,
+                    buffer,
+                    ::strerror_r(err, buffer.data(), buffer.size()));
             }
 
             //this is the only reliable way I found to be explicit about an invalidSocket when we assume they may not be copyable. Creating
             //an instance guarantees no copy
             static constexpr inline SocketT invalidSocket() noexcept{ return static_cast<SocketT>(-1); }
+
+        private:
+            static std::string msgFromStrerrorResult(
+                const ErrorT&,
+                const std::array<char, 256>&,
+                char* result){
+                return std::string(result);
+            }
+
+            static std::string msgFromStrerrorResult(
+                const ErrorT& err,
+                const std::array<char, 256>& buffer,
+                int result){
+                if(result == 0)
+                    return std::string(buffer.data());
+
+                return "Unknown POSIX error " + std::to_string(err);
+            }
     };
 
 } // namespace ninttp::internal

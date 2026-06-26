@@ -12,10 +12,11 @@
 #pragma once
 
 #include <cassert>
+#include <cstdio>
 #include <expected>
-#include <iostream> //for std::cerr on SocketCore destructor
 #include <type_traits>
 #include <utility>
+#include <mutex>
 
 #include "backends/concepts.hpp"
 #include "../types.hpp"
@@ -27,6 +28,7 @@
 namespace ninttp::internal
 {
     #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
+    static constinit inline std::once_flag flagInited{};
     static constinit inline bool backendInited = false;
     #endif
 
@@ -208,21 +210,17 @@ namespace ninttp::internal
              * @brief Best-effort socket cleanup.
              *
              * Please be aware of letting the destructor handle shutdown of the socket instead of
-             * manually calling close(). Errors are reported through std::cerr, which will likely
-             * change in the future because it is shared between the user and the library and can
-             * interfere.
+             * manually calling close(). Errors are reported through C stdio to avoid throwing from
+             * a noexcept destructor while diagnostics are emitted.
              */
             virtual ~SocketCore() noexcept{
                 auto closed = this->close();
 
                 if(!closed.has_value() && closed.error().error.has_value()){
-                    try{
-                        std::cerr << closed.error().error->msg() << std::endl;
-                    } catch(std::bad_alloc& err){
-                        std::cerr << err.what() << std::endl;
-                    } catch(...){
-                        std::fprintf(stderr, "Failed to destruct socket");
-                    }
+                    std::fprintf(
+                        stderr,
+                        "Failed to close socket during destruction. Native error: %d\n",
+                        static_cast<int>(closed.error().error->err_));
                 }
             };
 

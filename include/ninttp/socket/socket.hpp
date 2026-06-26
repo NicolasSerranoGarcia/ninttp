@@ -21,6 +21,17 @@ namespace ninttp
         template<typename EndpointT>
         inline constexpr Domain endpointDomain =
             std::same_as<EndpointT, IPv4Endpoint> ? Domain::IPv4 : Domain::IPv6;
+
+        template<typename ConnectedSocketT, typename EndpointT>
+        concept AcceptedConnectedSocket = requires(
+            typename SelectedBackend::SocketT socket,
+            Domain domain,
+            Service service,
+            Protocol protocol,
+            const EndpointT& endpoint) {
+                { ConnectedSocketT(socket, domain, service, protocol, endpoint) } noexcept
+                    -> std::same_as<ConnectedSocketT>;
+            };
     } // namespace internal
 
     // ListenerSocket intentionally has no class-level requires clause. The useful
@@ -37,6 +48,8 @@ namespace ninttp
         //A concept is useless here because there is no beahivoral check, but rather expecting just two types of endpoints
         static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
             "Listener socket only accepts IPv4 or IPv6 endpoints");
+        static_assert(internal::AcceptedConnectedSocket<ConnectedSocketT, EndpointT>,
+            "Connected socket must provide a noexcept adoption constructor for accepted sockets");
 
         public:
             /**
@@ -57,7 +70,6 @@ namespace ninttp
                 }
             }
 
-            //forward some of the methods to the public API
             using SocketBase::close;
             using SocketBase::domain;
             using SocketBase::isUsable;
