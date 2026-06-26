@@ -1,7 +1,21 @@
+/**
+ * @file types.hpp
+ * @author Nicolas Serrano (serranogarcianicolas@gmail.com)
+ * @brief Defines common socket domain, service, protocol, and shutdown policy types.
+ * @version 0.1
+ * @date 2026-06-26
+ *
+ * @copyright Copyright (c) 2026 Nicolas Serrano Garcia
+ *
+ */
+
 #pragma once
 
 namespace ninttp
 {
+    /**
+     * @brief Address family used when opening a socket.
+     */
     enum class Domain{
         Invalid = -1,
         IPv4,
@@ -9,6 +23,9 @@ namespace ninttp
         Unix,
     };
 
+    /**
+     * @brief Communication semantics requested from the native socket backend.
+     */
     enum class Service{
         Invalid = -1,
         Stream,
@@ -17,6 +34,9 @@ namespace ninttp
         SeqPacket,
     };
 
+    /**
+     * @brief Transport protocol requested from the native socket backend.
+     */
     enum class Protocol{
         Invalid = -1,
         Default,
@@ -30,9 +50,9 @@ namespace ninttp
      * @see toNativeShutdownPolicy
      */
     enum class ShutdownPolicy{
-        SHUT_RECEPTIONS, //! Shuts down receptions. This means that the socket that you call this policy on won't be able to receive further information from it's peer
-        SHUT_TRANSMISSIONS, //! Shuts down transmissions. This means that the socket that you call this policy on won't be able to send further information to it's peer
-        SHUT_TRANSMISSIONS_AND_RECEPTIONS //! Does the same as the other two combined
+        SHUT_RECEPTIONS, //!< Disables further receive operations on the socket.
+        SHUT_TRANSMISSIONS, //!< Disables further send operations on the socket.
+        SHUT_TRANSMISSIONS_AND_RECEPTIONS //!< Disables both receive and send operations.
     };
 
 } // namespace ninttp

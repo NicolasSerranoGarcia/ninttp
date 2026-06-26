@@ -1,16 +1,21 @@
+/**
+ * @file select_backend.hpp
+ * @author Nicolas Serrano (serranogarcianicolas@gmail.com)
+ * @brief Selects the native socket backend for the current platform.
+ * @version 0.1
+ * @date 2026-06-26
+ *
+ * @copyright Copyright (c) 2026 Nicolas Serrano Garcia
+ *
+ */
 
 #pragma once
 
-//to avoid namespace conflicts we make the includes outside of the namespace. The "using" is still done inside the namespace
-//it turns out that if we put the backend selection inside the namespace (the #include) we would end up with a namespace
-//like ninttp::internal::ninttp::internal (include directives just replace the call with the actual code, so makes sense)
-//the replacement would look like:
-//ninttp::internal{
-//    #if defined(_WIN32)
-//    namespace ninttp::internal{
-//          class WinsockBackend{ ... }
-//    }
-//}
+/*
+ * Backend headers are included outside the ninttp namespace because each backend
+ * declares its own namespace. Including them inside namespace ninttp::internal
+ * would nest the backend declarations as ninttp::internal::ninttp::internal.
+ */
 #include "../../nintraits.hpp"
 
 #if NINTTP_BACKEND_WINSOCK == 1

@@ -1,27 +1,47 @@
+/**
+ * @file concepts.hpp
+ * @author Nicolas Serrano (serranogarcianicolas@gmail.com)
+ * @brief Defines the structural contract required from socket backends.
+ * @version 0.1
+ * @date 2026-06-26
+ *
+ * @copyright Copyright (c) 2026 Nicolas Serrano Garcia
+ *
+ */
+
 #pragma once
 
 #include <concepts>
 #include <cstddef>
 #include <expected>
-#include <type_traits>
 #include <optional>
 #include <span>
 #include <string>
+#include <type_traits>
 
 #include "../../../endpoints.hpp"
 #include "../../types.hpp"
 
 namespace ninttp::internal {
+    /**
+     * @brief Describes whether a failed close released ownership of the native socket.
+     */
     enum class SocketCloseDisposition {
         Released,
         Retry,
         Unspecified
     };
 
+    /**
+     * @brief Backend socket options exposed through the socket facade.
+     */
     enum class SocketOption {
         IPv6Only
     };
 
+    /**
+     * @brief Close result containing both ownership disposition and the native error.
+     */
     template<typename ErrorT>
     struct SocketCloseStatus {
         SocketCloseDisposition disposition;

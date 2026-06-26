@@ -123,15 +123,15 @@ namespace ninttp::internal
             }
 
             //Only checks for backend validity. it can happen that the socket is valid, but it is not usable nor opened (for external causes)
-            constexpr bool isUsable() const noexcept{ return BackendT::isUsableSocket(handle_); }
+            [[nodiscard]] constexpr bool isUsable() const noexcept{ return BackendT::isUsableSocket(handle_); }
 
-            constexpr Domain domain() const noexcept{ return domain_; };
+            [[nodiscard]] constexpr Domain domain() const noexcept{ return domain_; };
 
-            constexpr Service service() const noexcept{ return service_; };
+            [[nodiscard]] constexpr Service service() const noexcept{ return service_; };
 
-            constexpr Protocol protocol() const noexcept{ return proto_; };
+            [[nodiscard]] constexpr Protocol protocol() const noexcept{ return proto_; };
 
-            std::expected<void, SocketError> shutdown(ShutdownPolicy what) noexcept{
+            [[nodiscard]] std::expected<void, SocketError> shutdown(ShutdownPolicy what) noexcept{
                 auto shutdown = BackendT::shutdownSocket(this->handle_, what);
                 if(!shutdown.has_value())
                     return std::unexpected{SocketError{shutdown.error()}};
@@ -150,7 +150,7 @@ namespace ninttp::internal
              * cleanup.
              * @return Empty result on success, or the close status of the current state on failure.
              */
-            std::expected<void, CloseStatus> replace(SocketCore&& other){
+            [[nodiscard]] std::expected<void, CloseStatus> replace(SocketCore&& other){
                 if(auto closed = this->close(); !closed){
                     return std::unexpected{closed.error()};
                 }
@@ -184,7 +184,7 @@ namespace ninttp::internal
              *
              * @see SocketCloseDisposition
              */
-            std::expected<void, CloseStatus> close() noexcept{
+            [[nodiscard]] std::expected<void, CloseStatus> close() noexcept{
                 //already closed or invalidated somewhere else
                 if(!BackendT::isUsableSocket(handle_))
                     return {};
@@ -285,7 +285,7 @@ namespace ninttp {
      *
      * @return Empty result on success, or the backend deinitialization error.
      */
-    inline std::expected<void, SocketError> deinitBackend() noexcept{
+    [[nodiscard]] inline std::expected<void, SocketError> deinitBackend() noexcept{
         if(!internal::backendInited)
             return {};
 

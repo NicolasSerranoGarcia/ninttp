@@ -1,9 +1,20 @@
+/**
+ * @file socket.hpp
+ * @author Nicolás Serrano (serranogarcianicolas@gmail.com)
+ * @brief the main socket utility file that serves as an umbrella for other files
+ * @version 0.1
+ * @date 2026-06-26
+ * 
+ * @copyright Copyright (c) 2026 Nicolás Serrano García
+ * 
+ */
+
 #pragma once
 
 #include <cassert>
 #include <concepts>
+#include <cstddef>
 #include <expected>
-#include <utility>
 #include <span>
 
 #include "internal/select_backend.hpp"
@@ -14,14 +25,23 @@
 
 namespace ninttp
 {
+    /**
+     * @brief Socket core specialized with the backend selected for this platform.
+     */
     using SocketBase = ninttp::internal::SocketCore<internal::SelectedBackend>;
 
     namespace internal
     {
+        /**
+         * @brief Compile-time socket domain associated with a concrete endpoint type.
+         */
         template<typename EndpointT>
         inline constexpr Domain endpointDomain =
             std::same_as<EndpointT, IPv4Endpoint> ? Domain::IPv4 : Domain::IPv6;
 
+        /**
+         * @brief Checks that a connected socket can adopt a native accepted socket.
+         */
         template<typename ConnectedSocketT, typename EndpointT>
         concept AcceptedConnectedSocket = requires(
             typename SelectedBackend::SocketT socket,
@@ -34,14 +54,16 @@ namespace ninttp
             };
     } // namespace internal
 
-    // ListenerSocket intentionally has no class-level requires clause. The useful
-    // requirements belong to the operations:
-    // - bind() needs the selected backend to translate EndpointT to native storage.
-    // - accept() needs ConnectedSocketT to provide an adoption constructor with
-    //   the signature used below. If that constructor is private, the connected
-    //   socket type must friend ListenerSocket.
-    // - The connected socket must need the private no throwing constructor. Elsewise the accept method 
-    // will call terminate if the constructor throws
+    /**
+     * @brief Stream listener socket bound to one endpoint family.
+     *
+     * ListenerSocket intentionally has no class-level requires clause. The useful
+     * requirements belong to the operations:
+     * - bind() needs the selected backend to translate EndpointT to native storage.
+     * - accept() needs ConnectedSocketT to provide a noexcept adoption constructor
+     *   with the signature used below. If that constructor is private, the connected
+     *   socket type must friend ListenerSocket.
+     */
     template<typename EndpointT, typename ConnectedSocketT>
     class ListenerSocket : protected SocketBase{
 
@@ -78,7 +100,13 @@ namespace ninttp
             using SocketBase::service;
             using SocketBase::shutdown;
 
-            std::expected<void, SocketError> bind(const EndpointT& endpoint) noexcept{
+            /**
+             * @brief Binds this listener to a local endpoint.
+             *
+             * @param endpoint Local address and port to bind.
+             * @return Empty result on success, or SocketError wrapping the native bind error.
+             */
+            [[nodiscard]] std::expected<void, SocketError> bind(const EndpointT& endpoint) noexcept{
                 using AddressLenT = typename internal::SelectedBackend::AddressLenT;
 
                 auto storage = internal::SelectedBackend::toStorage(endpoint);
@@ -91,7 +119,13 @@ namespace ninttp
                 return {};
             }
 
-            std::expected<void, SocketError> listen(int backlog) noexcept{
+            /**
+             * @brief Marks the bound socket as a passive listener.
+             *
+             * @param backlog Native backend backlog hint.
+             * @return Empty result on success, or SocketError wrapping the native listen error.
+             */
+            [[nodiscard]] std::expected<void, SocketError> listen(int backlog) noexcept{
                 auto listening = internal::SelectedBackend::listen(handle_, backlog);
                 if(!listening.has_value())
                     return std::unexpected{SocketError{listening.error()}};
@@ -99,7 +133,17 @@ namespace ninttp
                 return {};
             }
 
-            std::expected<ConnectedSocketT, SocketError> accept() noexcept{
+            /**
+             * @brief Accepts one pending connection.
+             *
+             * The accepted endpoint is reconstructed from backend-provided native storage. This
+             * function uses the unchecked conversion because the storage comes directly from a
+             * successful backend accept call.
+             *
+             * @return Connected socket on success, or SocketError wrapping the native accept
+             * error.
+             */
+            [[nodiscard]] std::expected<ConnectedSocketT, SocketError> accept() noexcept{
                 auto accepted = internal::SelectedBackend::accept(handle_);
                 if(!accepted.has_value())
                     return std::unexpected{SocketError{accepted.error()}};
@@ -115,9 +159,12 @@ namespace ninttp
             }
     };
 
-    // StreamSocket follows this contract:
-    // - connect() needs the selected backend to translate EndpointT to native storage.
-    // - accept() needs the selected backend to rebuild EndpointT from native storage.
+    /**
+     * @brief Connected stream socket bound to one endpoint family.
+     *
+     * connect() needs the selected backend to translate EndpointT to native storage.
+     * Accepted sockets are built through ListenerSocket using the private adoption constructor.
+     */
     template<typename EndpointT>
     class StreamSocket : protected SocketBase{
         static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
@@ -146,7 +193,13 @@ namespace ninttp
             using SocketBase::service;
             using SocketBase::shutdown;
 
-            std::expected<void, SocketError> connect(const EndpointT& endpoint) noexcept{
+            /**
+             * @brief Connects this socket to a remote endpoint.
+             *
+             * @param endpoint Remote address and port.
+             * @return Empty result on success, or SocketError wrapping the native connect error.
+             */
+            [[nodiscard]] std::expected<void, SocketError> connect(const EndpointT& endpoint) noexcept{
                 using AddressLenT = typename internal::SelectedBackend::AddressLenT;
 
                 auto storage = internal::SelectedBackend::toStorage(endpoint);
@@ -160,9 +213,18 @@ namespace ninttp
                 return {};
             }
 
-            //concurrent use of a send function while closing the socket is currently not
-            //supported and strongly disallowed as it can lead to fatal connection crashes.
-            std::expected<size_t, SocketError> send(std::span<const char> data) noexcept{
+            /**
+             * @brief Sends bytes through the socket once.
+             *
+             * A successful native send may write fewer bytes than requested. Use sendAll() when
+             * the whole span must be written before returning.
+             *
+             * Concurrent use of send while closing the same socket is not supported.
+             *
+             * @param data Bytes to send.
+             * @return Number of bytes sent, or SocketError wrapping the native send error.
+             */
+            [[nodiscard]] std::expected<std::size_t, SocketError> send(std::span<const char> data) noexcept{
                 auto sent = internal::SelectedBackend::send(handle_, data);
                 if(!sent.has_value())
                     return std::unexpected{SocketError{sent.error()}};
@@ -170,7 +232,19 @@ namespace ninttp
                 return *sent;
             }
 
-            std::expected<void, SocketError> sendAll(std::span<const char> data) noexcept{
+            /**
+             * @brief Sends all bytes in the provided span.
+             *
+             * The loop retries from the first unsent byte after partial writes. For non-empty
+             * spans, the backend send invariant is that success reports forward progress; that
+             * invariant is asserted.
+             *
+             * Concurrent use of sendAll while closing the same socket is not supported.
+             *
+             * @param data Bytes to send.
+             * @return Empty result on success, or SocketError wrapping the native send error.
+             */
+            [[nodiscard]] std::expected<void, SocketError> sendAll(std::span<const char> data) noexcept{
                 while(!data.empty()){
                     auto sent = this->send(data);
                     if(!sent.has_value())
@@ -184,9 +258,18 @@ namespace ninttp
                 return {};
             }
 
-            //concurrent use of a receive function while closing the socket is currently not
-            //supported and strongly disallowed as it can lead to fatal connection crashes.
-            std::expected<size_t, SocketError> receive(std::span<char> buffer) noexcept{
+            /**
+             * @brief Receives bytes from the socket once.
+             *
+             * A successful receive can return fewer bytes than the buffer size. A returned byte
+             * count of zero represents the native backend's end-of-stream condition.
+             *
+             * Concurrent use of receive while closing the same socket is not supported.
+             *
+             * @param buffer Destination buffer for received bytes.
+             * @return Number of bytes received, or SocketError wrapping the native receive error.
+             */
+            [[nodiscard]] std::expected<std::size_t, SocketError> receive(std::span<char> buffer) noexcept{
                 auto got = internal::SelectedBackend::receive(handle_, buffer);
                 if(!got.has_value())
                     return std::unexpected{SocketError{got.error()}};
