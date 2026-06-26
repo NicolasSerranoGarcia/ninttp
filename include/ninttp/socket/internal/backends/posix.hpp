@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <cerrno>
+#include <fcntl.h>
 #include <limits>
 #include <cstring> // strerror_r
 #include <string>
@@ -108,6 +109,19 @@ namespace ninttp::internal
                 AddressLenT len;
             };
 
+            static std::expected<void, ErrorT> setCloseOnExec(const SocketT& s) noexcept{
+                #if NINTTP_FD_CLOSE_EXEC == 1
+                const int flags = ::fcntl(s, F_GETFD);
+                if(flags == -1)
+                    return std::unexpected{getLastError()};
+
+                if(::fcntl(s, F_SETFD, flags | FD_CLOEXEC) == -1)
+                    return std::unexpected{getLastError()};
+                #endif
+
+                return {};
+            }
+
             /**
              * @brief Opens a native POSIX socket and applies required backend invariants.
              *
@@ -118,9 +132,22 @@ namespace ninttp::internal
              * type to report both the option failure and an uncertain cleanup result.
              */
             static std::expected<SocketT, ErrorT> openSocket(Domain d, Service s, Protocol p) noexcept{
-                const SocketT socket = static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
+                int nativeService = toNative(s);
+                #if NINTTP_FD_CLOSE_EXEC == 1 && defined(SOCK_CLOEXEC)
+                nativeService |= SOCK_CLOEXEC;
+                #endif
+
+                const SocketT socket = static_cast<SocketT>(::socket(toNative(d), nativeService, toNative(p)));
                 if(socket == invalidSocket())
                     return std::unexpected{getLastError()};
+
+                #if NINTTP_FD_CLOSE_EXEC == 1 && !defined(SOCK_CLOEXEC)
+                if(auto closeOnExec = setCloseOnExec(socket); !closeOnExec.has_value()){
+                    const ErrorT error = closeOnExec.error();
+                    ::close(socket);
+                    return std::unexpected{error};
+                }
+                #endif
 
                 #if NINTTP_PLATFORM_BSD == 1 || NINTTP_PLATFORM_APPLE == 1
                 const int noSigPipe = 1;
@@ -218,10 +245,22 @@ namespace ninttp::internal
                 AddressStorageT storage{};
                 AddressLenT len = sizeof(storage);
 
+                #if NINTTP_FD_CLOSE_EXEC == 1 && NINTTP_HAVE_ACCEPT4 == 1 && defined(SOCK_CLOEXEC)
+                SocketT sock = ::accept4(s, reinterpret_cast<sockaddr*>(&storage), &len, SOCK_CLOEXEC);
+                #else
                 SocketT sock = ::accept(s, reinterpret_cast<sockaddr*>(&storage), &len);
+                #endif
 
                 if(sock == invalidSocket())
                     return std::unexpected{getLastError()};
+
+                #if NINTTP_FD_CLOSE_EXEC == 1 && !(NINTTP_HAVE_ACCEPT4 == 1 && defined(SOCK_CLOEXEC))
+                if(auto closeOnExec = setCloseOnExec(sock); !closeOnExec.has_value()){
+                    const ErrorT error = closeOnExec.error();
+                    ::close(sock);
+                    return std::unexpected{error};
+                }
+                #endif
 
                 #if NINTTP_PLATFORM_BSD == 1 || NINTTP_PLATFORM_APPLE == 1
                 const int noSigPipe = 1;

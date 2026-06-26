@@ -33,6 +33,7 @@ endif()
 
 include(cmake/utils.cmake)
 include(CheckIncludeFileCXX)
+include(CheckCXXSymbolExists)
 include(TestBigEndian)
 
 # This is an internal CMake module (GNUInstallDirs.cmake) that unifies the paths for installation.
@@ -41,6 +42,7 @@ include(GNUInstallDirs)
 
 option(NINTTP_BUILD_TESTS "Build ninttp tests" OFF)
 option(NINTTP_BUILD_EXAMPLES "Build ninttp examples" OFF)
+option(NINTTP_FD_CLOSE_EXEC "Mark POSIX socket file descriptors close-on-exec" ON)
 
 # automatically set depending on if the project is being called as a subproject
 # (in that case there is usually no need for an installation target)
@@ -58,6 +60,7 @@ check_include_file_cxx("sys/socket.h" NINTTP_HAS_SYS_SOCKET_H)
 check_include_file_cxx("netinet/in.h" NINTTP_HAS_NETINET_IN_H)
 check_include_file_cxx("arpa/inet.h" NINTTP_HAS_ARPA_INET_H)
 check_include_file_cxx("unistd.h" NINTTP_HAS_UNISTD_H)
+check_cxx_symbol_exists(accept4 "sys/socket.h" NINTTP_HAS_ACCEPT4)
 
 set(NINTTP_CONFIG_PLATFORM_WINDOWS 0)
 set(NINTTP_CONFIG_PLATFORM_UNIX 0)
@@ -72,7 +75,17 @@ set(NINTTP_CONFIG_BACKEND_POSIX 0)
 set(NINTTP_CONFIG_SOCKET_BACKEND_REQUIRES_INIT 0)
 set(NINTTP_CONFIG_SOCKET_INVALID_HANDLE_ALL_BITS_ONE 0)
 set(NINTTP_CONFIG_SOCKET_INVALID_HANDLE_MINUS_ONE 0)
+set(NINTTP_CONFIG_FD_CLOSE_EXEC 0)
+set(NINTTP_CONFIG_HAVE_ACCEPT4 0)
 set(NINTTP_CONFIG_BYTE_ORDER 0)
+
+if(NINTTP_FD_CLOSE_EXEC)
+    set(NINTTP_CONFIG_FD_CLOSE_EXEC 1)
+endif()
+
+if(NINTTP_HAS_ACCEPT4)
+    set(NINTTP_CONFIG_HAVE_ACCEPT4 1)
+endif()
 
 test_big_endian(NINTTP_CONFIG_IS_BIG_ENDIAN)
 if(NINTTP_CONFIG_IS_BIG_ENDIAN)
