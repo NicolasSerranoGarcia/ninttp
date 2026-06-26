@@ -127,7 +127,6 @@ namespace ninttp::internal
                 std::swap(handle_, other.handle_);
             }
 
-<<<<<<< HEAD
             /**
              * @brief Checks whether the handle is not the backend invalid sentinel.
              *
@@ -157,17 +156,6 @@ namespace ninttp::internal
              * @param what Direction policy passed to the selected backend.
              * @return Empty result on success, or SocketError wrapping the native shutdown error.
              */
-=======
-            //Only checks for backend validity. it can happen that the socket is valid, but it is not usable nor opened (for external causes)
-            [[nodiscard]] constexpr bool isUsable() const noexcept{ return BackendT::isUsableSocket(handle_); }
-
-            [[nodiscard]] constexpr Domain domain() const noexcept{ return domain_; };
-
-            [[nodiscard]] constexpr Service service() const noexcept{ return service_; };
-
-            [[nodiscard]] constexpr Protocol protocol() const noexcept{ return proto_; };
-
->>>>>>> ea1a870f123ee499b6b0b292cd5065ff928e4842
             [[nodiscard]] std::expected<void, SocketError> shutdown(ShutdownPolicy what) noexcept{
                 auto shutdown = BackendT::shutdownSocket(this->handle_, what);
                 if(!shutdown.has_value())

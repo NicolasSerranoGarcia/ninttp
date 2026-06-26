@@ -46,14 +46,11 @@ namespace ninttp
             return out;
         }
 
-<<<<<<< HEAD
         /**
          * @brief Returns the backend-formatted native error message without call-site context.
          *
          * @return Message produced from the native backend error code.
          */
-=======
->>>>>>> ea1a870f123ee499b6b0b292cd5065ff928e4842
         [[nodiscard]] std::string context() const{
             return internal::SelectedBackend::getMsgFromError(err_);
         }
