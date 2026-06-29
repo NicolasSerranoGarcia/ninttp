@@ -25,6 +25,10 @@ namespace ninttp::internal{
     struct Header{
         std::string key;
         std::string value;
+
+        bool operator==(const Header& other) const noexcept{
+            return key == other.key && value == other.value;
+        }
     };
 } // namespace ninttp::internal
 
@@ -33,11 +37,11 @@ namespace ninttp
 
     struct httpVersion{
         static constexpr std::optional<httpVersion> fromRequestLine(const std::string& s){
-            if (s == "HTTP/0.9") return httpVersion{1,0};
+            if (s == "HTTP/0.9") return httpVersion{0,9};
             if (s == "HTTP/1.0") return httpVersion{1,0};
             if (s == "HTTP/1.1") return httpVersion{1,1};
-            if (s == "HTTP/2.0") return httpVersion{1,2};
-            if (s == "HTTP/3.0") return httpVersion{1,2};
+            if (s == "HTTP/2.0") return httpVersion{2,0};
+            if (s == "HTTP/3.0") return httpVersion{3,0};
             return std::nullopt;
         }
 
@@ -58,6 +62,7 @@ namespace ninttp
     };
 
     constexpr const httpVersion http_1_0(1,0);
+    constexpr const httpVersion http_1_1(1,1);
 
     //maybe change name or put it as a method inside a statusCode struct with implicit conversions to int
     using StatusCode = int;
@@ -131,12 +136,42 @@ namespace ninttp
 
     struct Response{
         httpVersion version;
-        //them classic 200, 300... codes
         StatusCode statusCode;
 
         std::vector<internal::Header> headers;
         std::optional<std::string> body;
-        //...
+
+        [[nodiscard]] std::string toString() const{
+            std::string responseStr;
+
+            responseStr += version.toHeaderString();
+
+            responseStr += " ";
+
+            //maybe change the status code to have a toString method for changes in future API
+            responseStr += std::to_string(statusCode);
+
+            responseStr += " ";
+
+            responseStr += getReadableStatus(statusCode);
+
+            responseStr += "\r\n";
+
+            for(const auto& header : headers){
+                responseStr += header.key + std::string(": ") + header.value + std::string("\r\n");
+            }
+
+            responseStr += "\r\n";
+
+            if(body.has_value()){
+                //TODO
+                //assert(response.headers.contains("Content-Length"))
+                responseStr += body.value();
+            }
+
+            //no move for NRVO
+            return responseStr;
+        }
     };
 
     inline std::ostream& operator<<(std::ostream& os, const Response& response){
@@ -155,21 +190,16 @@ namespace ninttp
 
     //maybe wire the interfaces to only use this. For example, addHeader and so, then request builder would not be needed semantically
     struct Request{
-        internal::httpMethod op = internal::httpMethod::INVALID;
+        internal::httpMethod method = internal::httpMethod::INVALID;
         std::string resource;
-        httpVersion version; //maybe for semantic completeness?
+        httpVersion version;
         std::vector<internal::Header> headers;
         std::optional<std::string> body;
-
-        void clear() noexcept{
-            op = internal::httpMethod::INVALID;
-            resource.clear();
-        }
     };
 
     inline std::ostream& operator<<(std::ostream& os, const Request& request){
         //not use the str array bc this should account for invalid too, which the array does not have
-        switch(request.op){
+        switch(request.method){
             case internal::httpMethod::GET:
                 os << "GET";
                 break;

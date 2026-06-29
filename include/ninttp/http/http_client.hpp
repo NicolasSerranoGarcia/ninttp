@@ -52,7 +52,8 @@ namespace ninttp
 
                 internal::httpResponseParser parser;
 
-                while(!parser.finished()){
+                auto htppParseStatus = internal::httpParseStatus::NeedData;
+                do{
                     auto res = streamSock_.receive(buf);
 
                     std::clog << "[http.client] receive returned\n";
@@ -75,14 +76,17 @@ namespace ninttp
                     auto parseRes = parser.append(got);
                     got.clear();
 
-                    if(!parseRes.has_value())
+                    if(!parseRes.has_value()){
                         std::clog << parseRes.error().what << std::endl;
+                        break;
+                    }
 
-                    if(*parseRes == internal::httpParseStatus::Done){
+                    htppParseStatus = *parseRes;
+                    if(htppParseStatus == internal::httpParseStatus::Done){
                         assert(parser.finished());
                         break;
                     }
-                }
+                }while(htppParseStatus == internal::httpParseStatus::NeedData);
 
                 //here we would need to process the whole response
                 return parser.getResponse();

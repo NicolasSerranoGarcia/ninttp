@@ -61,10 +61,10 @@ namespace ninttp::internal
 
                             for(const auto verb : all_verbs){
                                 if(std::string(httpVerbStr[static_cast<const int>(verb)]) == verbStr)
-                                    request.op = verb;
+                                    request.method = verb;
                             }
 
-                            if(request.op == httpMethod::INVALID)
+                            if(request.method == httpMethod::INVALID)
                                 return std::unexpected{httpParseError{std::string("Unrecognized method: ") + verbStr}};
 
                             //must not return npos and we should have moved to the next line
@@ -83,7 +83,7 @@ namespace ninttp::internal
                         
                         //processes headers but does not search for the end of headers
                         case Processing::Headers:{
-                            assert(request.op != httpMethod::INVALID);
+                            assert(request.method != httpMethod::INVALID);
                             size_t headerEnd;
 
                             std::clog << "[http.request_parser] state=Headers; searching header terminator\n";

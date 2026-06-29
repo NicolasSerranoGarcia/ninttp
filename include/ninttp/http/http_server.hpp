@@ -4,7 +4,6 @@
 #include "../endpoints.hpp"
 #include "../socket/types.hpp"
 #include "internal/http_request_parser.hpp"
-#include "internal/http_response_builder.hpp"
 #include "types.hpp"
 
 #include <array>
@@ -13,7 +12,6 @@
 #include <unordered_map>
 #include <functional>
 #include <expected>
-#include <optional>
 #include <utility>
 #include <iostream>
 
@@ -38,12 +36,12 @@ namespace ninttp
                 : listenerSock_(Protocol::Tcp)
             {}
 
-            std::optional<SocketError> listen(const EndpointT& interf){
+            std::expected<void, SocketError> listen(const EndpointT& interf){
                 if(auto bindRes = listenerSock_.bind(interf); !bindRes.has_value())
-                    return std::move(bindRes.error());
+                    return std::unexpected{bindRes.error()};
 
                 if(auto listenRes = listenerSock_.listen(MAX_BACKLOG); !listenRes.has_value())
-                    return std::move(listenRes.error());
+                    return std::unexpected{listenRes.error()};
 
                 while(1){
 
@@ -64,7 +62,7 @@ namespace ninttp
 
                     auto acceptRes = listenerSock_.accept();
                     if(!acceptRes.has_value())
-                        return std::move(acceptRes.error());
+                        return std::unexpected{std::move(acceptRes.error())};
 
                     clientSockets_.push_back(std::move(acceptRes).value());
 
@@ -75,11 +73,12 @@ namespace ninttp
                     std::array<char, 512> buf{};
                     bool parseFailed = false;
 
-                    while(!parser.finished()){
+                    auto htppParseStatus = internal::httpParseStatus::NeedData;
+                    do{
                         auto res = streamSock.receive(buf);
 
                         if(!res.has_value())
-                            return std::move(res.error());
+                            return std::unexpected{std::move(res.error())};
 
                         size_t read = res.value();
 
@@ -97,16 +96,21 @@ namespace ninttp
                         got.clear();
 
                         if(!parseRes.has_value()){
+                            //TODO: when all of this parsing loop is moved into its own function, this will return a parseError. This should be used 
+                            //for something. Used or not, moving this to its function removes the need for the parseFailed variable, because if the function
+                            //fails it will return the error. Pass a ref to the socket on the function and parse inside the function. In the future 
+                            //it will just get called into another thread or process. 
                             std::clog << "[http.server] request parse error: " << parseRes.error().what << '\n';
                             parseFailed = true;
                             break;
                         }
 
-                        if(*parseRes == internal::httpParseStatus::Done){
+                        htppParseStatus = *parseRes;
+                        if(htppParseStatus == internal::httpParseStatus::Done){
                             assert(parser.finished());
                             break;
                         }
-                    }
+                    }while(htppParseStatus == internal::httpParseStatus::NeedData);
 
                     if(parseFailed){
                         //we could maybe check for streamSock state
@@ -150,12 +154,12 @@ namespace ninttp
                                                                          .value = std::to_string(response.body->size())});
                         }
 
-                        auto responseStr = internal::httpResponseBuilder::fromResponseObject(response);
+                        auto responseStr = response.toString();
 
                         //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
                         //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
                         if(auto sent = streamSock.sendAll(std::span<const char>{responseStr.data(), responseStr.size()}); !sent.has_value())
-                            return std::move(sent.error());
+                            return std::unexpected{std::move(sent.error())};
                     } else{
                         //send a 404
                     }
@@ -164,7 +168,7 @@ namespace ninttp
                 std::clog << "[http.server] listen loop exited\n";
 
 
-                return std::nullopt;
+                return {};
             }
 
             void doGET(const std::string& resource, GetHandlerT callback){
