@@ -36,9 +36,8 @@ namespace ninttp::internal
     //on higher levels they can do the same
     //Semantics: a variable of this type can be reused to hold multiple valid instances of a socket representation. 
     //the directives "open", "close" and "release" enable for multiple usage throughout the lifetime. One can also move 
-    //an instance to another (which would be an equivalent to an "adopt" method, but as a SocketT has a Domain, 
-    //Service and Protocol associated, this later operation would essentially be a move operation, which is why it is not present in the API and
-    //move operator is encouraged instead for transfering ownership)
+    //an instance to another, which would be an equivalent to an "adopt" method, present on the API. This latter is preferred over the nonthrowing move operator, for the reason
+    //being that one can handle the possible error from destroying the previous state of the socket before swapping it. This is better explained in its correspondent methods
     template <SocketBackend BackendT>
     class SocketCore{
         public:
