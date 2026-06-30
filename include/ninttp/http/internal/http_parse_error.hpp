@@ -9,7 +9,14 @@ namespace ninttp::internal
         Done
     };
 
+    enum class httpParseErrorType{
+        UnrecognizedToken,
+        ExpectedMissingToken
+    };
+
     struct httpParseError{
         std::string what;
+        std::string parseContextText;
+        httpParseErrorType type;
     };
 } // namespace ninttp::internal

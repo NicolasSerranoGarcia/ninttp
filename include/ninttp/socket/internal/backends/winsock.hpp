@@ -432,6 +432,8 @@ namespace ninttp::internal
              */
             static inline ErrorT getLastError() noexcept{ return static_cast<ErrorT>(WSAGetLastError()); }
 
+            static constexpr ErrorT insufficientMemoryError() noexcept{ return WSAENOBUFS; }
+
             /**
              * @brief Classifies a native Winsock error value into ninttp's socket error categories.
              */

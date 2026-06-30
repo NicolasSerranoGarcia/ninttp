@@ -500,6 +500,8 @@ namespace ninttp::internal
              */
             static inline ErrorT getLastError() noexcept{ return static_cast<ErrorT>(errno); };
 
+            static constexpr ErrorT insufficientMemoryError() noexcept{ return ENOMEM; }
+
             /**
              * @brief Classifies a native POSIX errno value into ninttp's socket error categories.
              */

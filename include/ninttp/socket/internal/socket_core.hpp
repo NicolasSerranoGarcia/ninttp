@@ -250,7 +250,7 @@ namespace ninttp::internal
                     std::fprintf(
                         stderr,
                         "Failed to close socket during destruction. Native error: %d\n",
-                        static_cast<int>(closed.error().error->err_));
+                        static_cast<int>(closed.error().error->errorCode()));
                 }
             };
 

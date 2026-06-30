@@ -85,6 +85,7 @@ namespace ninttp::internal {
         }
         && requires {
             { Backend::invalidSocket() } -> std::same_as<typename Backend::SocketT>;
+            { Backend::insufficientMemoryError() } noexcept -> std::same_as<typename Backend::ErrorT>;
         }
         && requires(const typename Backend::SocketT& socket,
                     Domain domain,

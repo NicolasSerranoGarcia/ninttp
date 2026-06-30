@@ -17,9 +17,7 @@ void clientV6(){
         std::cout << got.value() << std::endl;
 
     } catch(SocketError& err){
-        std::cerr << err.msg();
-    } catch(std::bad_alloc& allocErr){
-        std::cerr << allocErr.what();
+        std::cerr << err.what();
     }
 }
 

@@ -11,8 +11,11 @@
 
 #pragma once
 
+#include <array>
+#include <cstdio>
 #include <source_location>
 #include <string>
+#include <string_view>
 
 #include "internal/select_backend.hpp"
 #include "socket_error_category.hpp"
@@ -22,7 +25,8 @@ namespace ninttp
     /**
      * @brief Represents an error in a socket operation
      */
-    struct SocketError{
+    class SocketError{
+        public:
         using ErrorT = internal::SelectedBackend::ErrorT;
         /**
          * @brief Builds a SocketError instance from a native backend error.
@@ -32,36 +36,67 @@ namespace ninttp
          * @details source_location is not specified to be constexpr nor consteval so we can't mark this constructor as such.
          */
         SocketError(const ErrorT& err, const std::source_location& location = std::source_location::current()) noexcept
-            : err_(err), location_(location), category_(internal::SelectedBackend::categoryFromError(err)){}
-
-        /**
-         * @brief Returns a comprehensive error message combining the location and the context given in construction
-         * @return The message composed from the call-site function and the optional context
-         * @details SocketError::msg() can be verbose. If you prefer to handle the error yourself, you may want to consult the err_ code.
-         * On unix platforms comes from errno, for example.
-         */
-        [[nodiscard]] std::string msg() const{
-            std::string out{location_.function_name()};
-            out += ": ";
-            out += internal::SelectedBackend::getMsgFromError(err_);
-            return out;
+            : err_(err), category_(internal::SelectedBackend::categoryFromError(err))
+        {
+            setMessage(err, location);
         }
 
         /**
-         * @brief Returns the backend-formatted native error message without call-site context.
+         * @brief Returns the preformatted error message.
          *
-         * @return Message produced from the native backend error code.
+         * @details The message is prepared during construction, so this accessor does not
+         * allocate and is safe to call from cleanup/error paths.
          */
-        [[nodiscard]] std::string context() const{
-            return internal::SelectedBackend::getMsgFromError(err_);
+        [[nodiscard]] const char* what() const noexcept{
+            return message_.data();
+        }
+
+        /**
+         * @brief Returns the backend native error code.
+         */
+        [[nodiscard]] ErrorT errorCode() const noexcept{
+            return err_;
         }
 
         [[nodiscard]] SocketErrorCategory category() const noexcept{
             return category_;
         }
 
-        internal::SelectedBackend::ErrorT err_; //! the native error code
-        std::source_location location_; //! the source location of the caller
+        private:
+        static constexpr std::size_t MAX_MESSAGE_SIZE = 512;
+
+        void copyMessage(std::string_view message) noexcept{
+            const std::size_t count = message.size() < MAX_MESSAGE_SIZE ? message.size() : MAX_MESSAGE_SIZE - 1;
+            for(std::size_t i = 0; i < count; ++i)
+                message_[i] = message[i];
+            message_[count] = '\0';
+        }
+
+        void setFallbackMessage(const ErrorT& originalErr, const std::source_location& location) noexcept{
+            err_ = internal::SelectedBackend::insufficientMemoryError();
+            category_ = internal::SelectedBackend::categoryFromError(err_);
+
+            std::snprintf(
+                message_.data(),
+                message_.size(),
+                "%s: error reporting of native socket error %d failed due to insufficient memory",
+                location.function_name(),
+                static_cast<int>(originalErr));
+        }
+
+        void setMessage(const ErrorT& err, const std::source_location& location) noexcept{
+            try{
+                std::string out{location.function_name()};
+                out += ": ";
+                out += internal::SelectedBackend::getMsgFromError(err);
+                copyMessage(out);
+            } catch(const std::bad_alloc&){
+                setFallbackMessage(err, location);
+            }
+        }
+
+        ErrorT err_; //! the native error code
         SocketErrorCategory category_;
+        std::array<char, MAX_MESSAGE_SIZE> message_{};
     };
 } // namespace ninttp

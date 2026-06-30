@@ -36,6 +36,7 @@ namespace ninttp
             httpServer()
                 : listenerSock_(Protocol::Tcp)
             {}
+            //TODO: socket errors and parseErrors need to have a to ninError method or other converter to get a generic error for the http API
 
             //this signature is correct. the listener socket should only report failure if its own setup went wrong.
             std::expected<void, SocketError> listen(const EndpointT& interf){
@@ -80,7 +81,7 @@ namespace ninttp
 
                         request = std::move(*requestRes);
                     } catch(const SocketError& err){
-                        std::clog << "[http.server] socket error while parsing request: " << err.msg() << '\n';
+                        std::clog << "[http.server] socket error while parsing request: " << err.what() << '\n';
                         continue;
                     }
 
