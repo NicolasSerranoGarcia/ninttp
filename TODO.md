@@ -2,7 +2,7 @@
 - Finish basic version of the parsers and builders
 - tests for all types of http messages: malformed, methods, combinations of options...
 - change interface to use span, modules and maybe threads, coroutines or IPC.
-- Do not use socketError to notify of a http error
+- tidy headers, move into folders and reorder constructs
 
 ## HTTP/1.x RFC compliance roadmap
 
