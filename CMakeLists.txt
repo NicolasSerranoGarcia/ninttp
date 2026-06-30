@@ -131,6 +131,7 @@ configure_file(
 
 set(public_headers
     include/ninttp/nintraits.hpp
+    include/ninttp/nin_error.hpp
     include/ninttp/socket/socket_error_category.hpp
     include/ninttp/socket/socket_error.hpp
     include/ninttp/socket/types.hpp

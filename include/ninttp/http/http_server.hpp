@@ -3,6 +3,7 @@
 #include "../socket/socket.hpp"
 #include "../endpoints.hpp"
 #include "../socket/types.hpp"
+#include "../nin_error.hpp"
 #include "internal/http_request_parser.hpp"
 #include "types.hpp"
 
@@ -31,20 +32,21 @@ namespace ninttp
             /**
              * @brief Construct a server with an opened listener socket.
              *
-             * @throws SocketError If listener socket construction fails.
+             * @throws NinError with .type = Socket if listener socket construction fails.
              */
-            httpServer()
-                : listenerSock_(Protocol::Tcp)
-            {}
-            //TODO: socket errors and parseErrors need to have a to ninError method or other converter to get a generic error for the http API
+            httpServer() try
+                : listenerSock_(Protocol::Tcp) {}
+            catch(const SocketError& err) {
+                throw NinError::fromSocketError(err);
+            }
 
             //this signature is correct. the listener socket should only report failure if its own setup went wrong.
-            std::expected<void, SocketError> listen(const EndpointT& interf){
+            std::expected<void, NinError> listen(const EndpointT& interf){
                 if(auto bindRes = listenerSock_.bind(interf); !bindRes.has_value())
-                    return std::unexpected{bindRes.error()};
+                    return std::unexpected{NinError::fromSocketError(bindRes.error())};
 
                 if(auto listenRes = listenerSock_.listen(MAX_BACKLOG); !listenRes.has_value())
-                    return std::unexpected{listenRes.error()};
+                    return std::unexpected{NinError::fromSocketError(listenRes.error())};
 
                 while(1){
 
@@ -65,25 +67,20 @@ namespace ninttp
 
                     auto acceptRes = listenerSock_.accept();
                     if(!acceptRes.has_value())
-                        return std::unexpected{acceptRes.error()};
+                        return std::unexpected{NinError::fromSocketError(acceptRes.error())};
 
                     clientSockets_.push_back(std::move(acceptRes).value());
 
                     auto& streamSock = clientSockets_[clientSockets_.size()-1];
 
                     Request request;
-                    try{
-                        auto requestRes = parseConnection(streamSock);
-                        if(!requestRes.has_value()){
-                            std::clog << "[http.server] request parse error: " << requestRes.error().what << '\n';
-                            continue;
-                        }
-
-                        request = std::move(*requestRes);
-                    } catch(const SocketError& err){
-                        std::clog << "[http.server] socket error while parsing request: " << err.what() << '\n';
+                    auto requestRes = parseConnection(streamSock);
+                    if(!requestRes.has_value()){
+                        std::clog << "[http.server] request error: " << requestRes.error().what << '\n';
                         continue;
                     }
+
+                    request = std::move(*requestRes);
 
                     //Depending on the request we might need to modify state, and at the end send the response
 
@@ -122,7 +119,7 @@ namespace ninttp
                         //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
                         //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
                         if(auto sent = streamSock.sendAll(std::span<const char>{responseStr.data(), responseStr.size()}); !sent.has_value())
-                            return std::unexpected{std::move(sent.error())};
+                            return std::unexpected{NinError::fromSocketError(sent.error())};
                     } else{
                         //send a 404
                     }
@@ -148,8 +145,7 @@ namespace ninttp
 
             static constinit const int MAX_BACKLOG = 100;
 
-            //throws SocketError for socket failures that are not an orderly close
-            std::expected<Request, internal::httpParseError> parseConnection(StreamSocket<EndpointT>& sock){
+            std::expected<Request, NinError> parseConnection(StreamSocket<EndpointT>& sock){
                 internal::httpRequestParser parser;
                 std::string got;
 
@@ -165,16 +161,16 @@ namespace ninttp
                             continue;
 
                         if(err.category() == SocketErrorCategory::ConnectionClosed)
-                            return std::unexpected{internal::httpParseError{ .what = "Connection closed before a complete request was received" }};
+                            return std::unexpected{NinError::fromSocketCategory(SocketErrorCategory::ConnectionClosed, "Connection closed before a complete request was received")};
 
-                        throw err;
+                        return std::unexpected{NinError::fromSocketError(err)};
                     }
 
                     size_t read = res.value();
 
                     if(read == 0){
                         std::clog << "[http.server] sender sent 0\n";
-                        return std::unexpected{internal::httpParseError{ .what = "Connection closed before a complete request was received" }};
+                        return std::unexpected{NinError::fromSocketCategory(SocketErrorCategory::ConnectionClosed, "Connection closed before a complete request was received")};
                     }
 
                     got.append(buf.data(), read);
@@ -184,7 +180,7 @@ namespace ninttp
                     got.clear();
 
                     if(!parseRes.has_value())
-                        return std::unexpected{parseRes.error()};
+                        return std::unexpected{NinError::fromHttpParseError(parseRes.error())};
 
                     htppParseStatus = *parseRes;
                     if(htppParseStatus == internal::httpParseStatus::Done){

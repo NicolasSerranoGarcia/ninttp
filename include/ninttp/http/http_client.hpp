@@ -3,6 +3,7 @@
 #include "../socket/socket.hpp"
 #include "../endpoints.hpp"
 #include "../socket/types.hpp"
+#include "../nin_error.hpp"
 #include "internal/http_response_parser.hpp"
 #include "internal/http_request_builder.hpp"
 #include "types.hpp"
@@ -29,35 +30,31 @@ namespace ninttp
             /**
              * @brief Construct a client and connect it to @p peer.
              *
-             * @throws SocketError If stream socket construction or connection fails.
+             * @throws NinError with .type = Socket if stream socket construction or connection fails.
              */
             httpClient(const EndpointT& peer)
                 : streamSock_(Protocol::Tcp)
             {
                 if(const auto res = streamSock_.connect(peer); !res.has_value())
-                    throw res.error();
+                    throw NinError::fromSocketError(res.error());
             }
 
             //TODO: validate resource for syntax or disallowed characters
-            std::expected<Response, internal::httpParseError> GET(const std::string& resource){
+            std::expected<Response, NinError> GET(const std::string& resource){
                 //TODO: move to request builder and research for header architecture
                 //Use string views and spans for interrfaces
                 std::string request = std::string("GET ") + resource + std::string(" ") +
                                     ver.toHeaderString() + std::string("\r\n\r\n");
                 if(auto sent = streamSock_.sendAll(std::span<const char>{request.data(), request.size()}); !sent.has_value())
-                    throw sent.error();
+                    return std::unexpected{NinError::fromSocketError(sent.error())};
 
-                //this should not throw if a socket operation fails, but idk how to manage this because there are two semantic operations being carried:
-                //parsing and socketing. Any of the two might fail. morph one into the other? loosen restricitions on any of each and make a more general error for http that is not
-                //actual error codes returned from responses?
                 return parseResponse(streamSock_);
             }
 
         private:
             StreamSocket<EndpointT> streamSock_;
 
-            //throws SocketError for socket failures that are not an orderly close
-            std::expected<Response, internal::httpParseError> parseResponse(StreamSocket<EndpointT>& sock){
+            std::expected<Response, NinError> parseResponse(StreamSocket<EndpointT>& sock){
                 internal::httpResponseParser parser;
                 std::string got;
 
@@ -75,16 +72,16 @@ namespace ninttp
                             continue;
 
                         if(err.category() == SocketErrorCategory::ConnectionClosed)
-                            return std::unexpected{internal::httpParseError{ .what = "Connection closed before a complete response was received" }};
+                            return std::unexpected{NinError::fromSocketCategory(SocketErrorCategory::ConnectionClosed, "Connection closed before a complete response was received")};
 
-                        throw err;
+                        return std::unexpected{NinError::fromSocketError(err)};
                     }
 
                     size_t read = res.value();
 
                     if(read == 0){
                         std::clog << "[http.client] sender sent 0\n";
-                        return std::unexpected{internal::httpParseError{ .what = "Connection closed before a complete response was received" }};
+                        return std::unexpected{NinError::fromSocketCategory(SocketErrorCategory::ConnectionClosed, "Connection closed before a complete response was received")};
                     }
 
                     got.append(buf.data(), read);
@@ -95,7 +92,7 @@ namespace ninttp
                     got.clear();
 
                     if(!parseRes.has_value())
-                        return std::unexpected{parseRes.error()};
+                        return std::unexpected{NinError::fromHttpParseError(parseRes.error())};
 
                     htppParseStatus = *parseRes;
                     if(htppParseStatus == internal::httpParseStatus::Done){

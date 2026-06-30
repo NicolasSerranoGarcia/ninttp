@@ -9,7 +9,7 @@ void client(){
     try{
         httpClient client(IPv4Endpoint::loopback(8080));
 
-        std::expected<Response, internal::httpParseError> got;
+        std::expected<Response, NinError> got;
 
         if(got = client.GET("/"); !got.has_value())
             std::cerr << got.error().what << std::endl;
