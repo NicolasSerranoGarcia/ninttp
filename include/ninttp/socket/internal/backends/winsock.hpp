@@ -433,6 +433,37 @@ namespace ninttp::internal
             static inline ErrorT getLastError() noexcept{ return static_cast<ErrorT>(WSAGetLastError()); }
 
             /**
+             * @brief Classifies a native Winsock error value into ninttp's socket error categories.
+             */
+            static constexpr ninttp::SocketErrorCategory categoryFromError(const ErrorT& err) noexcept{
+                switch(err){
+                    case WSAEINTR:
+                        return ninttp::SocketErrorCategory::Interrupted;
+
+                    case WSAEWOULDBLOCK:
+                    case WSAEINPROGRESS:
+                    case WSAEALREADY:
+                        return ninttp::SocketErrorCategory::Blocks;
+
+                    case WSAECONNRESET:
+                    case WSAECONNABORTED:
+                    case WSAENOTCONN:
+                    case WSAETIMEDOUT:
+                    case WSAESHUTDOWN:
+                    case WSAENETDOWN:
+                    case WSAENETRESET:
+                    case WSAENETUNREACH:
+                    case WSAEHOSTDOWN:
+                    case WSAEHOSTUNREACH:
+                    case WSA_OPERATION_ABORTED:
+                        return ninttp::SocketErrorCategory::ConnectionLost;
+
+                    default:
+                        return ninttp::SocketErrorCategory::Other;
+                }
+            }
+
+            /**
              * @brief Formats a native Winsock error code as a string.
              */
             static std::string getMsgFromError(const ErrorT& err){

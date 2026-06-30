@@ -15,6 +15,7 @@
 #include <string>
 
 #include "internal/select_backend.hpp"
+#include "socket_error_category.hpp"
 
 namespace ninttp
 {
@@ -31,7 +32,7 @@ namespace ninttp
          * @details source_location is not specified to be constexpr nor consteval so we can't mark this constructor as such.
          */
         SocketError(const ErrorT& err, const std::source_location& location = std::source_location::current()) noexcept
-            : err_(err), location_(location){}
+            : err_(err), location_(location), category_(internal::SelectedBackend::categoryFromError(err)){}
 
         /**
          * @brief Returns a comprehensive error message combining the location and the context given in construction
@@ -55,7 +56,12 @@ namespace ninttp
             return internal::SelectedBackend::getMsgFromError(err_);
         }
 
+        [[nodiscard]] SocketErrorCategory category() const noexcept{
+            return category_;
+        }
+
         internal::SelectedBackend::ErrorT err_; //! the native error code
         std::source_location location_; //! the source location of the caller
+        SocketErrorCategory category_;
     };
 } // namespace ninttp

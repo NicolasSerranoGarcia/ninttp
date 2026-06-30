@@ -9,10 +9,10 @@ void clientV6(){
     try{
         httpClient<http_1_0, IPv6Endpoint> clientV6(IPv6Endpoint::loopback(8080));
 
-        std::expected<Response, SocketError> got;
+        std::expected<Response, internal::httpParseError> got;
 
         if(got = clientV6.GET("/"); !got.has_value())
-            std::cerr << got.error().msg() << std::endl;
+            std::cerr << got.error().what << std::endl;
 
         std::cout << got.value() << std::endl;
 

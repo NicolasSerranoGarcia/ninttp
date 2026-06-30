@@ -14,6 +14,7 @@
 #include <expected>
 #include <utility>
 #include <iostream>
+#include <cassert>
 
 namespace ninttp
 {
@@ -36,6 +37,7 @@ namespace ninttp
                 : listenerSock_(Protocol::Tcp)
             {}
 
+            //this signature is correct. the listener socket should only report failure if its own setup went wrong.
             std::expected<void, SocketError> listen(const EndpointT& interf){
                 if(auto bindRes = listenerSock_.bind(interf); !bindRes.has_value())
                     return std::unexpected{bindRes.error()};
@@ -62,65 +64,25 @@ namespace ninttp
 
                     auto acceptRes = listenerSock_.accept();
                     if(!acceptRes.has_value())
-                        return std::unexpected{std::move(acceptRes.error())};
+                        return std::unexpected{acceptRes.error()};
 
                     clientSockets_.push_back(std::move(acceptRes).value());
 
                     auto& streamSock = clientSockets_[clientSockets_.size()-1];
 
-                    std::string got;
-
-                    std::array<char, 512> buf{};
-                    bool parseFailed = false;
-
-                    auto htppParseStatus = internal::httpParseStatus::NeedData;
-                    do{
-                        auto res = streamSock.receive(buf);
-
-                        if(!res.has_value())
-                            return std::unexpected{std::move(res.error())};
-
-                        size_t read = res.value();
-
-                        if(read == 0){
-                            std::clog << "[http.server] sender sent 0\n";
-                            break;
+                    Request request;
+                    try{
+                        auto requestRes = parseConnection(streamSock);
+                        if(!requestRes.has_value()){
+                            std::clog << "[http.server] request parse error: " << requestRes.error().what << '\n';
+                            continue;
                         }
 
-                        for(int i = 0; i < read; ++i)
-                            got.push_back(buf[i]);
-
-                        std::clog << "[http.server] received " << got.size() << " bytes:\n" << got << '\n';
-                        //for now the dirtiest way is to pass got and then clear. It wastes a lot of time but just works
-                        auto parseRes = parser.append(got);
-                        got.clear();
-
-                        if(!parseRes.has_value()){
-                            //TODO: when all of this parsing loop is moved into its own function, this will return a parseError. This should be used 
-                            //for something. Used or not, moving this to its function removes the need for the parseFailed variable, because if the function
-                            //fails it will return the error. Pass a ref to the socket on the function and parse inside the function. In the future 
-                            //it will just get called into another thread or process. 
-                            std::clog << "[http.server] request parse error: " << parseRes.error().what << '\n';
-                            parseFailed = true;
-                            break;
-                        }
-
-                        htppParseStatus = *parseRes;
-                        if(htppParseStatus == internal::httpParseStatus::Done){
-                            assert(parser.finished());
-                            break;
-                        }
-                    }while(htppParseStatus == internal::httpParseStatus::NeedData);
-
-                    if(parseFailed){
-                        //we could maybe check for streamSock state
+                        request = std::move(*requestRes);
+                    } catch(const SocketError& err){
+                        std::clog << "[http.server] socket error while parsing request: " << err.msg() << '\n';
                         continue;
                     }
-
-                    std::clog << "[http.server] request parser finished\n";
-
-                    //assert getRequest leaves the internal Request defaulted
-                    auto request = parser.getRequest();
 
                     //Depending on the request we might need to modify state, and at the end send the response
 
@@ -184,5 +146,56 @@ namespace ninttp
             std::vector<StreamSocket<EndpointT>> clientSockets_;
 
             static constinit const int MAX_BACKLOG = 100;
+
+            //throws SocketError for socket failures that are not an orderly close
+            std::expected<Request, internal::httpParseError> parseConnection(StreamSocket<EndpointT>& sock){
+                internal::httpRequestParser parser;
+                std::string got;
+
+                std::array<char, 512> buf{};
+
+                auto htppParseStatus = internal::httpParseStatus::NeedData;
+                do{
+                    auto res = sock.receive(buf);
+
+                    if(!res.has_value()){
+                        const SocketError& err = res.error();
+                        if(err.category() == SocketErrorCategory::Interrupted)
+                            continue;
+
+                        if(err.category() == SocketErrorCategory::ConnectionClosed)
+                            return std::unexpected{internal::httpParseError{ .what = "Connection closed before a complete request was received" }};
+
+                        throw err;
+                    }
+
+                    size_t read = res.value();
+
+                    if(read == 0){
+                        std::clog << "[http.server] sender sent 0\n";
+                        return std::unexpected{internal::httpParseError{ .what = "Connection closed before a complete request was received" }};
+                    }
+
+                    got.append(buf.data(), read);
+
+                    std::clog << "[http.server] received " << got.size() << " bytes:\n" << got << '\n';
+                    auto parseRes = parser.append(got);
+                    got.clear();
+
+                    if(!parseRes.has_value())
+                        return std::unexpected{parseRes.error()};
+
+                    htppParseStatus = *parseRes;
+                    if(htppParseStatus == internal::httpParseStatus::Done){
+                        assert(parser.finished());
+                        break;
+                    }
+                }while(htppParseStatus == internal::httpParseStatus::NeedData);
+
+                std::clog << "[http.server] request parser finished\n";
+
+                //assert getRequest leaves the internal Request defaulted
+                return parser.getRequest();
+            }
     };
 } // namespace ninttp

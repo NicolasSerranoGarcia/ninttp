@@ -13,6 +13,7 @@
 #include <expected>
 #include <utility>
 #include <iostream>
+#include <cassert>
 
 namespace ninttp
 {
@@ -38,48 +39,63 @@ namespace ninttp
             }
 
             //TODO: validate resource for syntax or disallowed characters
-            std::expected<Response, SocketError> GET(const std::string& resource){
+            std::expected<Response, internal::httpParseError> GET(const std::string& resource){
                 //TODO: move to request builder and research for header architecture
                 //Use string views and spans for interrfaces
                 std::string request = std::string("GET ") + resource + std::string(" ") +
                                     ver.toHeaderString() + std::string("\r\n\r\n");
                 if(auto sent = streamSock_.sendAll(std::span<const char>{request.data(), request.size()}); !sent.has_value())
-                    return std::unexpected{sent.error()};
+                    throw sent.error();
 
+                //this should not throw if a socket operation fails, but idk how to manage this because there are two semantic operations being carried:
+                //parsing and socketing. Any of the two might fail. morph one into the other? loosen restricitions on any of each and make a more general error for http that is not
+                //actual error codes returned from responses?
+                return parseResponse(streamSock_);
+            }
+
+        private:
+            StreamSocket<EndpointT> streamSock_;
+
+            //throws SocketError for socket failures that are not an orderly close
+            std::expected<Response, internal::httpParseError> parseResponse(StreamSocket<EndpointT>& sock){
+                internal::httpResponseParser parser;
                 std::string got;
 
                 std::array<char, 512> buf{};
 
-                internal::httpResponseParser parser;
-
                 auto htppParseStatus = internal::httpParseStatus::NeedData;
                 do{
-                    auto res = streamSock_.receive(buf);
+                    auto res = sock.receive(buf);
 
                     std::clog << "[http.client] receive returned\n";
-                    
-                    if(!res.has_value())
-                        return std::unexpected{res.error()};
-                    
-                        size_t read = res.value();
 
-                        if(read == 0){
-                            std::clog << "[http.client] sender sent 0\n";
-                            break;
-                        }
+                    if(!res.has_value()){
+                        const SocketError& err = res.error();
+                        if(err.category() == SocketErrorCategory::Interrupted)
+                            continue;
 
-                    for(int i = 0; i < read; ++i)
-                        got.push_back(buf[i]);
+                        if(err.category() == SocketErrorCategory::ConnectionClosed)
+                            return std::unexpected{internal::httpParseError{ .what = "Connection closed before a complete response was received" }};
+
+                        throw err;
+                    }
+
+                    size_t read = res.value();
+
+                    if(read == 0){
+                        std::clog << "[http.client] sender sent 0\n";
+                        return std::unexpected{internal::httpParseError{ .what = "Connection closed before a complete response was received" }};
+                    }
+
+                    got.append(buf.data(), read);
 
                     std::clog << "[http.client] received " << got.size() << " bytes:\n" << got << '\n';
 
                     auto parseRes = parser.append(got);
                     got.clear();
 
-                    if(!parseRes.has_value()){
-                        std::clog << parseRes.error().what << std::endl;
-                        break;
-                    }
+                    if(!parseRes.has_value())
+                        return std::unexpected{parseRes.error()};
 
                     htppParseStatus = *parseRes;
                     if(htppParseStatus == internal::httpParseStatus::Done){
@@ -88,11 +104,7 @@ namespace ninttp
                     }
                 }while(htppParseStatus == internal::httpParseStatus::NeedData);
 
-                //here we would need to process the whole response
                 return parser.getResponse();
             }
-
-        private:
-            StreamSocket<EndpointT> streamSock_;
     };
 } // namespace ninttp

@@ -20,6 +20,7 @@
 #include <type_traits>
 
 #include "../../../endpoints.hpp"
+#include "../../socket_error_category.hpp"
 #include "../../types.hpp"
 
 namespace ninttp::internal {
@@ -165,6 +166,7 @@ namespace ninttp::internal {
             { Backend::receive(socket, receiveBuffer) } noexcept
                 -> std::same_as<std::expected<std::size_t, typename Backend::ErrorT>>;
 
+            { Backend::categoryFromError(err) } noexcept -> std::same_as<ninttp::SocketErrorCategory>;
             { Backend::getMsgFromError(err) } -> std::same_as<std::string>;
         };
 

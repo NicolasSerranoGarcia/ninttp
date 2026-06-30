@@ -501,6 +501,66 @@ namespace ninttp::internal
             static inline ErrorT getLastError() noexcept{ return static_cast<ErrorT>(errno); };
 
             /**
+             * @brief Classifies a native POSIX errno value into ninttp's socket error categories.
+             */
+            static constexpr ninttp::SocketErrorCategory categoryFromError(const ErrorT& err) noexcept{
+                switch(err){
+                    case EINTR:
+                        return ninttp::SocketErrorCategory::Interrupted;
+
+                    case EAGAIN:
+                    #if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+                    case EWOULDBLOCK:
+                    #endif
+                    #if defined(EINPROGRESS)
+                    case EINPROGRESS:
+                    #endif
+                    #if defined(EALREADY)
+                    case EALREADY:
+                    #endif
+                        return ninttp::SocketErrorCategory::Blocks;
+
+                    #if defined(ECONNRESET)
+                    case ECONNRESET:
+                    #endif
+                    #if defined(ECONNABORTED)
+                    case ECONNABORTED:
+                    #endif
+                    #if defined(ENOTCONN)
+                    case ENOTCONN:
+                    #endif
+                    #if defined(ETIMEDOUT)
+                    case ETIMEDOUT:
+                    #endif
+                    #if defined(EPIPE)
+                    case EPIPE:
+                    #endif
+                    #if defined(ESHUTDOWN)
+                    case ESHUTDOWN:
+                    #endif
+                    #if defined(ENETDOWN)
+                    case ENETDOWN:
+                    #endif
+                    #if defined(ENETRESET)
+                    case ENETRESET:
+                    #endif
+                    #if defined(ENETUNREACH)
+                    case ENETUNREACH:
+                    #endif
+                    #if defined(EHOSTDOWN)
+                    case EHOSTDOWN:
+                    #endif
+                    #if defined(EHOSTUNREACH)
+                    case EHOSTUNREACH:
+                    #endif
+                        return ninttp::SocketErrorCategory::ConnectionLost;
+
+                    default:
+                        return ninttp::SocketErrorCategory::Other;
+                }
+            }
+
+            /**
              * @brief Formats a native POSIX error code as a string.
              */
             static std::string getMsgFromError(const ErrorT& err){
