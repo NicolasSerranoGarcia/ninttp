@@ -13,7 +13,6 @@ Main references:
 
 ### Core message parsing
 
-- Strictly parse request lines: `METHOD SP request-target SP HTTP-version CRLF`.
 - Strictly parse status lines: `HTTP-version SP status-code SP reason-phrase CRLF`.
 - Fix HTTP version handling:
   - accept `HTTP/1.0` and `HTTP/1.1`;

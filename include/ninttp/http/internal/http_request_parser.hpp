@@ -58,15 +58,15 @@ namespace ninttp::internal
                                                                         .what = "Request line contains preceeding whitespace"}};
 
                             
-                            auto sp = requestLine.find(' ');
+                            auto methodResourceSP = requestLine.find(' ');
 
-                            if(sp == std::string::npos)
+                            if(methodResourceSP == std::string::npos)
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
                                                                         .what = "Missing space delimiter between method and resource"}};
                     
-                            std::string_view lineMethod = requestLine.substr(0, sp);
+                            std::string_view lineMethod = requestLine.substr(0, methodResourceSP);
                             //+1 to skip the space
-                            lastProcessedIdx = sp+1;
+                            lastProcessedIdx = methodResourceSP+1;
 
                             for(const auto m : all_http_methods){
                                 if(std::string(httpVerbStr[static_cast<const int>(m)]) == lineMethod)
@@ -74,21 +74,22 @@ namespace ninttp::internal
                             }
 
                             if(request.method == httpMethod::INVALID)
-                                return std::unexpected{httpParseError{std::string("Unrecognized method: ") + std::string(lineMethod)}};
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                        .what = std::string("Unrecognized method: ") + std::string(lineMethod)}};
 
                             if(hasPrecedingWhitespace(requestLine.substr(lastProcessedIdx)))
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
-                                        .what = "Request line contains extra whitespace between method and resource"}};
+                                                                        .what = "Request line contains extra whitespace between method and resource"}};
 
-                            sp = requestLine.find(' ', lastProcessedIdx);
+                            auto resourceVersionSP = requestLine.find(' ', lastProcessedIdx);
 
-                            if(sp == std::string::npos)
+                            if(resourceVersionSP == std::string::npos)
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
                                                                         .what = "Missing space delimiter between resource and version"}};
 
-                            request.resource = requestLine.substr(lastProcessedIdx, sp - lastProcessedIdx);
+                            request.resource = requestLine.substr(lastProcessedIdx, resourceVersionSP - lastProcessedIdx);
                             
-                            lastProcessedIdx = sp+1;
+                            lastProcessedIdx = resourceVersionSP+1;
 
                             if(hasPrecedingWhitespace(requestLine.substr(lastProcessedIdx)))
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
@@ -96,13 +97,37 @@ namespace ninttp::internal
 
                             std::string_view version = requestLine.substr(lastProcessedIdx, lineEnd - lastProcessedIdx);
 
-                            if(auto v = httpVersion::fromRequestLineVersion(version); !v.has_value() || v.value().major != ver.major)
-                                return std::unexpected{httpParseError{std::string("Cannot parse version ") + std::string(version) + 
-                                                        std::string(" with the specified parser version ") + ver.toString()}};
+                            //about request lines: 
+                            //Request HTTP/1.0 to HTTP/1.1-capable server:
+                            //parse it, respond HTTP/1.1 or HTTP/1.0, depending on what the user specified on the httpServer template method.
+                            //even if you can respond with higher, the version template mandates what does the server respond with
 
-                            //TODO: assert if the server should return response as it's version even if the client is of another minor.
+                            //Request HTTP/1.1 to HTTP/1.0-capable server:
+                            //same major version, higher minor. Should process as highest HTTP/1.x you support.
 
-                            //must not return npos and we should have moved to the next line
+                            //Request HTTP/2.0 on an HTTP/1.x text connection:
+                            //do not silently ignore. Either reject/close or send 505 if you can still produce an HTTP/1.x response.
+
+                            //Malformed request-line:
+                            //400 Bad Request, generally.
+
+                            //Valid request-line but unsupported major version:
+                            //505 HTTP Version Not Supported.
+
+                            auto v = httpVersion::fromRequestLineVersion(version);
+
+                            //the version value is malformed from the line itself, no logic involved
+                            if(!v.has_value())
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedVersion, 
+                                                                        .what = std::string("Unrecognized version from request line ") + std::string(version)}};
+
+                            if(v.value().major > ver.major)
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::UnsupportedVersion, 
+                                                                        .what = std::string("Cannot parse request with version ") + std::string(version) + 
+                                                                        std::string(" using the specified parser version ") + ver.toString()}};
+
+                            request.version = v;
+
                             lastProcessedIdx = lineEnd;
                             assert(lastProcessedIdx != std::string::npos);
 

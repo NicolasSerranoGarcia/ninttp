@@ -12,7 +12,9 @@ namespace ninttp::internal
     enum class httpParseErrorType{
         UnrecognizedToken,
         ExpectedMissingToken,
-        ExtraWhitespace
+        ExtraWhitespace,
+        UnsupportedVersion,
+        UnrecognizedVersion
     };
 
     struct httpParseError{
