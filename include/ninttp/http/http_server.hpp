@@ -85,8 +85,8 @@ namespace ninttp
                     //Depending on the request we might need to modify state, and at the end send the response
 
                     //we need to send the response. Essentially, we want to do a transformation of the Request into the response.
-                    // The callback, if specified, for the resource that Response holds is the transformer of our request into the Response.
-                    //this transformation is specified by the user, that specifies what to do depending on the resource.
+                    // The callback, if specified, for the target that Response holds is the transformer of our request into the Response.
+                    //this transformation is specified by the user, that specifies what to do depending on the target.
                     //the interface should be 
 
                     //GHLT: we need to set the invariants about how the listener socket works with stream sockets. 
@@ -94,17 +94,17 @@ namespace ninttp
 
                     Response response;
 
-                    //use contains bc we dont want to create the resource
+                    //use contains bc we dont want to create the target
                     //GHLT: this probably also triggers 404 or other depending on permissions
                     //the error message shall be returned to the client
-                    if(getHandlers.contains(request.resource)){
+                    if(getHandlers.contains(request.target)){
 
                         //TODO allow only a handful of operations over the response object. For example, setting the contents,
                         //setting a header maybe? and so. The rest is constructed by the response builder
                         //this would be implemented by making the contents of response private, maybe friending the builders
                         //and creating two methods like setContent and setHeader(). For the moment the most reasonable is letting only 
                         //setContent because set headers might have many side effects and I don't know if it would be useful for the user
-                        getHandlers[request.resource](response);
+                        getHandlers[request.target](response);
 
                         response.version = ver;
                         response.statusCode = 200;
@@ -131,9 +131,9 @@ namespace ninttp
                 return {};
             }
 
-            void doGET(const std::string& resource, GetHandlerT callback){
-                /*TODO: validate resource is not malicious and so*/
-                getHandlers[resource] = callback;
+            void doGET(const std::string& target, GetHandlerT callback){
+                /*TODO: validate target is not malicious and so*/
+                getHandlers[target] = callback;
             }
 
         private:

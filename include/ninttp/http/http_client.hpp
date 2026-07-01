@@ -39,11 +39,11 @@ namespace ninttp
                     throw NinError::fromSocketError(res.error());
             }
 
-            //TODO: validate resource for syntax or disallowed characters
-            std::expected<Response, NinError> GET(const std::string& resource){
+            //TODO: validate target for syntax or disallowed characters
+            std::expected<Response, NinError> GET(const std::string& target){
                 //TODO: move to request builder and research for header architecture
                 //Use string views and spans for interrfaces
-                std::string request = std::string("GET ") + resource + std::string(" ") +
+                std::string request = std::string("GET ") + target + std::string(" ") +
                                     ver.toHeaderString() + std::string("\r\n\r\n");
                 if(auto sent = streamSock_.sendAll(std::span<const char>{request.data(), request.size()}); !sent.has_value())
                     return std::unexpected{NinError::fromSocketError(sent.error())};

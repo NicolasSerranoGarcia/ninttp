@@ -7,7 +7,7 @@ namespace ninttp{
     class httpRequestBuilder{
         //use body at own risk. Depending on the implementation, a GET with a body might get rejected or have ambiguous behavior.
         //it doesnt offer semantic meaning either, but it is left as a lifeline.
-        static Request build(std::string resource, std::string body = ""){
+        static Request build(std::string target, std::string body = ""){
             Request request;
 
             request.method = mode;

@@ -14,7 +14,11 @@ namespace ninttp::internal
         ExpectedMissingToken,
         ExtraWhitespace,
         UnsupportedVersion,
-        UnrecognizedVersion
+        UnrecognizedVersion,
+        RequestLineTooLong,
+        TargetTooLong,
+        MethodTooLong,
+        VersionTooLong
     };
 
     struct httpParseError{

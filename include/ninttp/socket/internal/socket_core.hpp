@@ -101,7 +101,7 @@ namespace ninttp::internal
              * This operator stays noexcept and always consumes @p other, but the previous socket
              * state is left to the temporary destructor. If that destructor cannot actually close the
              * previous native socket, the failure cannot be reported here and the
-             * resource may leak.
+             * target may leak.
              *
              * @warning Use replace() when the close result of the previous state must be observed
              * by the caller.

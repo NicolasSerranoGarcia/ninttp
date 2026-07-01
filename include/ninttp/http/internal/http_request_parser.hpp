@@ -28,6 +28,12 @@ namespace ninttp::internal
             Finished
         };
 
+        enum class RequestLineProcessing{
+            Method,
+            Target,
+            Version
+        };
+
         public:
             //TODO: we should most definitely delegate to a specific parser depending on the method read. 
             //most certainly synced with a stream socket connection
@@ -39,109 +45,148 @@ namespace ninttp::internal
 
                 while(1){
                     switch(state){
-                        //first time parsing. Store until we find CRLF and then process once
                         case Processing::RequestLine:{
-                            std::string::size_type lineEnd;
-                            //even if we cant find the CRLF (given that we still havent got to it), we could also check for identifiers of other parts of the
-                            //message (like headers or other parts of the body), to lookahead and report that the CRLF is missing, and the parser is expecting
-                            //it to continue, even though it seems like the message is "complete"? kind of what compilers do to report not just the first error
-                            //they find, but skip it and find more errors downstream
-                            if(lineEnd = constructed.find("\r\n"); lineEnd == std::string::npos)
-                                return httpParseStatus::NeedData;
+                            if(constructed.size() > MaxRequestLineLength)
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::RequestLineTooLong,
+                                                                        .what = "Request line exceeds total length allowed by the RFC 9112"}};
 
-                            std::string_view requestLine(constructed.c_str(), lineEnd);
+                            switch(requestLineState){
+                                case RequestLineProcessing::Method:{
+                                    assert(lastProcessedIdx == std::string::npos);
 
-                            assert(lastProcessedIdx == std::string::npos);
+                                    if(hasPrecedingWhitespace(constructed))
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                                .what = "Request line contains preceeding whitespace"}};
 
-                            if(hasPrecedingWhitespace(requestLine))
-                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
-                                                                        .what = "Request line contains preceeding whitespace"}};
+                                    //SYNC POINT: space delimited between the method and the resource
+                                    auto methodResourceSP = constructed.find(' ');
 
-                            
-                            auto methodResourceSP = requestLine.find(' ');
+                                    if(methodResourceSP == std::string::npos){
+                                        if(constructed.size() > MaxMethodLength)
+                                            return std::unexpected{httpParseError{ .type = httpParseErrorType::MethodTooLong, 
+                                                                                .what = "Method length exceeds max length possible for a standard method"}};
 
-                            if(methodResourceSP == std::string::npos)
-                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
-                                                                        .what = "Missing space delimiter between method and resource"}};
-                    
-                            std::string_view lineMethod = requestLine.substr(0, methodResourceSP);
-                            //+1 to skip the space
-                            lastProcessedIdx = methodResourceSP+1;
+                                        return httpParseStatus::NeedData;
+                                    }
 
-                            for(const auto m : all_http_methods){
-                                if(std::string(httpVerbStr[static_cast<const int>(m)]) == lineMethod)
-                                    request.method = m;
-                            }
+                                    std::string_view lineMethod = std::string_view{constructed}.substr(0, methodResourceSP);
 
-                            if(request.method == httpMethod::INVALID)
-                                return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
-                                                                        .what = std::string("Unrecognized method: ") + std::string(lineMethod)}};
+                                    for(const auto m : allHttpMethods){
+                                        if(allHttpMetodsStr[static_cast<const int>(m)] == lineMethod)
+                                            request.method = m;
+                                    }
 
-                            if(hasPrecedingWhitespace(requestLine.substr(lastProcessedIdx)))
-                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
-                                                                        .what = "Request line contains extra whitespace between method and resource"}};
+                                    if(request.method == httpMethod::INVALID)
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                                .what = std::string("Unrecognized method: ") + std::string(lineMethod)}};
 
-                            auto resourceVersionSP = requestLine.find(' ', lastProcessedIdx);
+                                    lastProcessedIdx = methodResourceSP+1;
+                                    requestLineState = RequestLineProcessing::Target;
+                                    break;
+                                }
 
-                            if(resourceVersionSP == std::string::npos)
-                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
-                                                                        .what = "Missing space delimiter between resource and version"}};
+                                case RequestLineProcessing::Target:{
 
-                            request.resource = requestLine.substr(lastProcessedIdx, resourceVersionSP - lastProcessedIdx);
-                            
-                            lastProcessedIdx = resourceVersionSP+1;
+                                    if(hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                                .what = "Request line contains extra whitespace between method and target"}};
 
-                            if(hasPrecedingWhitespace(requestLine.substr(lastProcessedIdx)))
-                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
-                                        .what = "Request line contains extra whitespace between resource and version"}};
+                                    if(std::string_view{constructed}.substr(lastProcessedIdx).size() > MaxRequestTargetLength)
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::TargetTooLong, 
+                                                                            .what = "Target length exceeds max length possible for RFC 9112"}};
 
-                            std::string_view version = requestLine.substr(lastProcessedIdx, lineEnd - lastProcessedIdx);
+                                    //SYNC POINT: space delimited between the resource and the version
+                                    auto targetVersionSP = constructed.find(' ', lastProcessedIdx);
 
-                            //about request lines: 
-                            //Request HTTP/1.0 to HTTP/1.1-capable server:
-                            //parse it, respond HTTP/1.1 or HTTP/1.0, depending on what the user specified on the httpServer template method.
-                            //even if you can respond with higher, the version template mandates what does the server respond with
+                                    if(targetVersionSP == std::string::npos){
+                                        //TODO: additionally maybe validate that target exists when constructing gradually?
+                                        //here we would check existence of constructed against the stored resources, leaving early once 
+                                        //we find a non registerd or other resource
 
-                            //Request HTTP/1.1 to HTTP/1.0-capable server:
-                            //same major version, higher minor. Should process as highest HTTP/1.x you support.
+                                        return httpParseStatus::NeedData;
+                                    }
 
-                            //Request HTTP/2.0 on an HTTP/1.x text connection:
-                            //do not silently ignore. Either reject/close or send 505 if you can still produce an HTTP/1.x response.
+                                    request.target = constructed.substr(lastProcessedIdx, targetVersionSP - lastProcessedIdx);
 
-                            //Malformed request-line:
-                            //400 Bad Request, generally.
+                                    //TODO: validate syntactic correctness of request.target only to comply with standard requirements of RFC
 
-                            //Valid request-line but unsupported major version:
-                            //505 HTTP Version Not Supported.
+                                    lastProcessedIdx = targetVersionSP+1;
+                                    requestLineState = RequestLineProcessing::Version;
+                                    break;
+                                }
 
-                            auto v = httpVersion::fromRequestLineVersion(version);
+                                case RequestLineProcessing::Version:{
 
-                            //the version value is malformed from the line itself, no logic involved
-                            if(!v.has_value())
-                                return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedVersion, 
-                                                                        .what = std::string("Unrecognized version from request line ") + std::string(version)}};
+                                    if(hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                                .what = "Request line contains extra whitespace between target and version"}};
 
-                            if(v.value().major > ver.major)
-                                return std::unexpected{httpParseError{ .type = httpParseErrorType::UnsupportedVersion, 
-                                                                        .what = std::string("Cannot parse request with version ") + std::string(version) + 
-                                                                        std::string(" using the specified parser version ") + ver.toString()}};
+                                    //SYNC POINT: CRLF delimiting request line
+                                    std::string::size_type lineEnd = constructed.find("\r\n", lastProcessedIdx);
 
-                            request.version = v;
+                                    std::string::size_type versionLength = lineEnd == std::string::npos ? lineEnd : lineEnd - lastProcessedIdx;
 
-                            lastProcessedIdx = lineEnd;
-                            assert(lastProcessedIdx != std::string::npos);
+                                    //search until the end of constructed in case we havent found CRLF, if not until CRLF to avoid including parts of header
+                                    if(std::string_view{constructed}.substr(lastProcessedIdx, versionLength).size() > HTTPVersionLength)
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::VersionTooLong,
+                                                                                .what = "Version length exceeds expected length of 8 bytes (HTTP/X.X)"}};
 
-                            //we do not sum +2 to the lastProcessedIdx bc the Headers must search for a double CRLF if there are no headers.
-                            //In the case there are no headers, we must search for this CRLF and the one that marks the header end.
-                            //if there are headers the +2 will be done in headers
+                                    if(lineEnd == std::string::npos)
+                                        return httpParseStatus::NeedData;
 
-                            std::clog << "[http.request_parser] state=RequestLine -> Headers\n";
-                            
-                            state = Processing::Headers;
+                                    std::string_view version = std::string_view{constructed}.substr(lastProcessedIdx, lineEnd - lastProcessedIdx);
+
+                                    if(hasTrailingWhitespace(version))
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                                .what = "Request line contains extra trailing whitespace"}};
+
+                                    //about request lines: 
+                                    //Request HTTP/1.0 to HTTP/1.1-capable server:
+                                    //parse it, respond HTTP/1.1 or HTTP/1.0, depending on what the user specified on the httpServer template method.
+                                    //even if you can respond with higher, the version template mandates what does the server respond with
+
+                                    //Request HTTP/1.1 to HTTP/1.0-capable server:
+                                    //same major version, higher minor. Should process as highest HTTP/1.x you support.
+
+                                    //Request HTTP/2.0 on an HTTP/1.x text connection:
+                                    //do not silently ignore. Either reject/close or send 505 if you can still produce an HTTP/1.x response.
+
+                                    //Malformed request-line:
+                                    //400 Bad Request, generally.
+
+                                    //Valid request-line but unsupported major version:
+                                    //505 HTTP Version Not Supported.
+
+                                    auto v = httpVersion::fromRequestLineVersion(version);
+
+                                    //the version value is malformed from the line itself, no logic involved
+                                    if(!v.has_value())
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedVersion, 
+                                                                                .what = std::string("Unrecognized version from request line ") + std::string(version)}};
+
+                                    if(v.value().major > ver.major)
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::UnsupportedVersion, 
+                                                                                .what = std::string("Cannot parse request with version ") + std::string(version) + 
+                                                                                std::string(" using the specified parser version ") + ver.toString()}};
+
+                                    request.version = v.value();
+
+                                    lastProcessedIdx = lineEnd;
+                                    assert(lastProcessedIdx != std::string::npos);
+
+                                    //we do not sum +2 to the lastProcessedIdx bc the Headers must search for a double CRLF if there are no headers.
+                                    //In the case there are no headers, we must search for this CRLF and the one that marks the header end.
+                                    //if there are headers the +2 will be done in headers
+
+                                    std::clog << "[http.request_parser] state=RequestLine -> Headers\n";
+                                    
+                                    state = Processing::Headers;
+                                    break;
+                                } // case RequestLineProcessing::Version
+                            } // switch(state)
                             break;
-                        }
-                        
-                        //processes headers but does not search for the end of headers
+                        } // case Processing::RequestLine
+
                         case Processing::Headers:{
                             assert(request.method != httpMethod::INVALID);
                             size_t headerEnd;
@@ -315,10 +360,19 @@ namespace ninttp::internal
                 lastProcessedIdx = std::string::npos;
                 bodySize = -1;
                 state = Processing::RequestLine;
+                requestLineState = RequestLineProcessing::Method;
             }
 
             static bool hasPrecedingWhitespace(std::string_view str){
                 return str.starts_with(' ');
+            }
+
+            static bool hasPrecedingWhitespace(const std::string& str){
+                return str.starts_with(' ');
+            }
+
+            static bool hasTrailingWhitespace(std::string_view str){
+                return str.ends_with(' ');
             }
 
             std::string constructed;
@@ -328,5 +382,11 @@ namespace ninttp::internal
             Request request;
             std::ptrdiff_t bodySize = -1; // maybe use something bigger in the future?
             Processing state = Processing::RequestLine;
+            RequestLineProcessing requestLineState = RequestLineProcessing::Method;
+
+            static constexpr const std::size_t MaxMethodLength = 32;
+            static constexpr const std::size_t MaxRequestTargetLength = 8000;
+            static constexpr const std::size_t HTTPVersionLength = 8;
+            static constexpr const std::size_t MaxRequestLineLength = MaxMethodLength + MaxRequestTargetLength + 4 /*2 SP & CRLF*/ + HTTPVersionLength;
     };
 } // namespace ninttp::internal

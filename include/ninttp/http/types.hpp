@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <ostream>
 #include <string_view>
+#include <array>
 
 namespace ninttp::internal{
     enum class httpMethod{
@@ -19,8 +20,8 @@ namespace ninttp::internal{
     };
 
     //only for iterating, this is why INVALID is not included
-    constexpr const httpMethod all_http_methods[] = {httpMethod::GET, httpMethod::PUT, httpMethod::DEL, httpMethod::PATCH, httpMethod::HEAD};
-    constexpr const char* httpVerbStr[] = {"GET", "PUT", "DELETE", "PATCH", "HEAD"};
+    constexpr const std::array<httpMethod, 5> allHttpMethods{httpMethod::GET, httpMethod::PUT, httpMethod::DEL, httpMethod::PATCH, httpMethod::HEAD};
+    constexpr const std::array<std::string_view, 5> allHttpMetodsStr{"GET", "PUT", "DELETE", "PATCH", "HEAD"};
 
     struct Header{
         std::string key;
@@ -200,7 +201,7 @@ namespace ninttp
     //maybe wire the interfaces to only use this. For example, addHeader and so, then request builder would not be needed semantically
     struct Request{
         internal::httpMethod method = internal::httpMethod::INVALID;
-        std::string resource;
+        std::string target;
         httpVersion version;
         std::vector<internal::Header> headers;
         std::optional<std::string> body;
@@ -229,7 +230,7 @@ namespace ninttp
                 break;
         }
 
-        os << ' ' << request.resource << '\n';
+        os << ' ' << request.target << '\n';
 
         for(const auto& header : request.headers)
             os << header.key << ": " << header.value << '\n';
