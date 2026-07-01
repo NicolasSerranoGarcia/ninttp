@@ -18,7 +18,8 @@ namespace ninttp::internal
         RequestLineTooLong,
         TargetTooLong,
         MethodTooLong,
-        VersionTooLong
+        VersionTooLong,
+        InvalidLength
     };
 
     struct httpParseError{

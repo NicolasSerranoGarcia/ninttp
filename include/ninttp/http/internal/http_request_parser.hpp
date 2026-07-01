@@ -7,9 +7,11 @@
 #include <optional>
 #include <expected>
 #include <cassert>
+#include <charconv>
 #include <iostream>
 #include <span>
 #include <string_view>
+#include <system_error>
 
 #include "http_parse_error.hpp"
 #include "../types.hpp"
@@ -201,9 +203,6 @@ namespace ninttp::internal
                                 //there are no remaining headers
                                 if(lastProcessedIdx == currentHeaderEnd){
                                     lastProcessedIdx += 2;
-                                    //TODO: make body responsible for checking if there is an actual size, instead of jumping directly to the finsihed state. 
-                                    //This avoids double state
-                                    state = Processing::Body;
                                     break;
                                 }
 
@@ -212,72 +211,68 @@ namespace ninttp::internal
                                 if(!header.has_value())
                                     return std::unexpected{header.error()};
 
-                                request.headers.push_back(header.value());
-                            }
+                                const auto parsedHeader = std::move(header).value();
+                                if(parsedHeader.key == "Content-Length"){
+                                    const char* first = parsedHeader.value.data();
+                                    const char* last = first + parsedHeader.value.size();
+                                    auto [ptr, ec] = std::from_chars(first, last, bodySize);
 
-                            for(const auto& header : request.headers){
-                                if(header.key != std::string("Content-Length"))
-                                    continue;
+                                    if(ec == std::errc::invalid_argument || ptr != last){
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                                .what = std::string("Expected valid Content-Length, given ") + parsedHeader.value}};
+                                    }
 
-                                try{
-                                    bodySize = std::stoi(header.value);
-                                } catch(std::invalid_argument& inv){
-                                    return std::unexpected{
-                                        httpParseError{ .what = std::string{"Expected valid Content-Length, given "} + header.value}
-                                    };
-                                } catch(std::out_of_range& r){
-                                    return std::unexpected{
-                                        httpParseError{ .what = std::string{"Content-Length field exceeds allowed range"} }
-                                    };
+                                    if(ec == std::errc::result_out_of_range){
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                                                .what = "Content-Length field exceeds allowed range"}};
+                                    }
                                 }
 
-                                if(bodySize < 0){
-                                    return std::unexpected{
-                                        httpParseError{ .what = std::string{"Expected Content-Length field to be non-negative, given "} + header.value}
-                                    };
-                                }
-
-                                break;
+                                request.headers.push_back(parsedHeader);
                             }
 
-                            //no body so the message is complete
                             if(bodySize == 0){
+                                leftoverBytes.append(std::string_view{constructed}.substr(lastProcessedIdx));
                                 state = Processing::Finished;
                                 return httpParseStatus::Done;
                             }
 
-                            std::clog << "[http.request_parser] state=Headers -> Body; body_size=" << bodySize << '\n';
+                            request.body.emplace();
+                            remaining = bodySize;
 
+                            std::clog << "[http.request_parser] state=Headers -> Body; body_size=" << bodySize << '\n';
                             state = Processing::Body;
 
                             break;
                         }
                         
+                        //TODO: implement body correctly
                         case Processing::Body:{
                             //we start at the next character of the CRLF that separates the headers and body
 
-                            if(bodySize == -1){
-                                state = Processing::Finished;
-                                return httpParseStatus::Done;
+                            auto arrived = std::string_view{constructed}.substr(lastProcessedIdx);
+
+                            if(arrived.size() < remaining){
+                                const auto consumed = arrived.size();
+                                request.body->append(arrived);
+                                remaining -= consumed;
+                                lastProcessedIdx += consumed;
+                                return httpParseStatus::NeedData;
                             }
 
-                            if(constructed.size() - lastProcessedIdx < bodySize)
-                                return httpParseStatus::NeedData;
+                            const auto consumed = remaining;
+                            request.body->append(arrived.substr(0, consumed));
+                            leftoverBytes.append(arrived.substr(consumed));
+                            remaining = 0;
 
-                            request.body.emplace();
+                            lastProcessedIdx += consumed;
 
-                            for(int i = 0; i != bodySize; i++)
-                                request.body->push_back(constructed[lastProcessedIdx + i]);
-                            
                             std::clog << "[http.request_parser] state=Body -> Finished\n";
 
                             state = Processing::Finished;
-
-                            //if there is extra load we should ignore it
-                            // if(constructed.size()-1 != lastProcessedIdx)
-                            //     return append("");
-
                             return httpParseStatus::Done;
+
+                            break;
                         }
 
                         default:
@@ -306,8 +301,18 @@ namespace ninttp::internal
 
             Request getRequest() noexcept{
                 assert(state == Processing::Finished);
-                reset();
                 return std::move(request); //TODO: check the move constructor of Request and assert it leaves it as the default constructor (invalid)
+            }
+
+            bool hasLeftoverBytes() const noexcept{
+                assert(state == Processing::Finished);
+                return !leftoverBytes.empty();
+            }
+
+            //moves the leftover bytes from the last parsing into the caller
+            std::string getLeftoverBytes() noexcept{
+                assert(state == Processing::Finished);
+                return std::move(leftoverBytes);
             }
 
         private:
@@ -315,7 +320,7 @@ namespace ninttp::internal
             void reset() noexcept{
                 constructed.clear();
                 lastProcessedIdx = std::string::npos;
-                bodySize = -1;
+                bodySize = 0;
                 state = Processing::RequestLine;
                 requestLineState = RequestLineProcessing::Method;
             }
@@ -336,7 +341,7 @@ namespace ninttp::internal
             //so only groups code to make it clearer.
             //also advances lastProcessedIdx to the next header start
             std::expected<Header, httpParseError> getHeader(std::string::size_type currentHeaderEnd){
-                std::string_view headers = std::string_view{constructed}.substr(lastProcessedIdx);
+                std::string_view headers = std::string_view{constructed};
 
                 auto colon = headers.find(':', lastProcessedIdx);
 
@@ -347,11 +352,10 @@ namespace ninttp::internal
 
                 internal::Header header{ .key = std::string(headers.substr(lastProcessedIdx, colon - lastProcessedIdx))};
 
-                lastProcessedIdx = colon;
-                //must have processed until lastProcessedIdx == colon
+                lastProcessedIdx = colon+1;
                 assert(lastProcessedIdx < currentHeaderEnd);
 
-                if(constructed[lastProcessedIdx+1] == ' ')
+                if(constructed[lastProcessedIdx] == ' ')
                     lastProcessedIdx++;
 
                 header.value = headers.substr(lastProcessedIdx, currentHeaderEnd - lastProcessedIdx);
@@ -368,9 +372,12 @@ namespace ninttp::internal
             //synced with the constructed string as new info gets received
             //TODO: assert this has a move constructor that leaves the object in it's original state, or at least a clear method
             Request request;
-            std::ptrdiff_t bodySize = -1; // maybe use something bigger in the future?
+            std::size_t bodySize = 0; // maybe use something bigger in the future?
+            std::size_t remaining;
             Processing state = Processing::RequestLine;
             RequestLineProcessing requestLineState = RequestLineProcessing::Method;
+
+            std::string leftoverBytes;
 
             static constexpr const std::size_t MaxMethodLength = 32;
             static constexpr const std::size_t MaxRequestTargetLength = 8000;
