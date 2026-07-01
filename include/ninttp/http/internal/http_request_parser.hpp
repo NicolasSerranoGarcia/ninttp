@@ -97,6 +97,13 @@ namespace ninttp::internal
 
                                     //SYNC POINT: space delimited between the resource and the version
                                     auto targetVersionSP = constructed.find(' ', lastProcessedIdx);
+                                    auto requestLineEnd = constructed.find("\r\n", lastProcessedIdx);
+
+                                    //avoid reporting the need for more data when we find a CRLF but not a SP, as CRLF is reserved only for the request line delimiter
+                                    if(requestLineEnd != std::string::npos && (targetVersionSP == std::string::npos || requestLineEnd < targetVersionSP))
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
+                                                                                .what = "Missing space delimiter between target and version"}};
+                                    
 
                                     if(targetVersionSP == std::string::npos){
                                         //TODO: additionally maybe validate that target exists when constructing gradually?
@@ -122,19 +129,19 @@ namespace ninttp::internal
                                                                                 .what = "Request line contains extra whitespace between target and version"}};
 
                                     //SYNC POINT: CRLF delimiting request line
-                                    std::string::size_type lineEnd = constructed.find("\r\n", lastProcessedIdx);
+                                    std::string::size_type requestLineEnd = constructed.find("\r\n", lastProcessedIdx);
 
-                                    std::string::size_type versionLength = lineEnd == std::string::npos ? lineEnd : lineEnd - lastProcessedIdx;
+                                    std::string::size_type versionLength = requestLineEnd == std::string::npos ? requestLineEnd : requestLineEnd - lastProcessedIdx;
 
                                     //search until the end of constructed in case we havent found CRLF, if not until CRLF to avoid including parts of header
                                     if(std::string_view{constructed}.substr(lastProcessedIdx, versionLength).size() > HTTPVersionLength)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::VersionTooLong,
                                                                                 .what = "Version length exceeds expected length of 8 bytes (HTTP/X.X)"}};
 
-                                    if(lineEnd == std::string::npos)
+                                    if(requestLineEnd == std::string::npos)
                                         return httpParseStatus::NeedData;
 
-                                    std::string_view version = std::string_view{constructed}.substr(lastProcessedIdx, lineEnd - lastProcessedIdx);
+                                    std::string_view version = std::string_view{constructed}.substr(lastProcessedIdx, requestLineEnd - lastProcessedIdx);
 
                                     if(hasTrailingWhitespace(version))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
@@ -171,7 +178,7 @@ namespace ninttp::internal
 
                                     request.version = v.value();
 
-                                    lastProcessedIdx = lineEnd;
+                                    lastProcessedIdx = requestLineEnd;
                                     assert(lastProcessedIdx != std::string::npos);
 
                                     //we do not sum +2 to the lastProcessedIdx bc the Headers must search for a double CRLF if there are no headers.
