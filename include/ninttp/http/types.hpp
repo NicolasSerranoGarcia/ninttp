@@ -19,7 +19,7 @@ namespace ninttp::internal{
     };
 
     //only for iterating, this is why INVALID is not included
-    constexpr const httpMethod all_verbs[] = {httpMethod::GET, httpMethod::PUT, httpMethod::DEL, httpMethod::PATCH, httpMethod::HEAD};
+    constexpr const httpMethod all_http_methods[] = {httpMethod::GET, httpMethod::PUT, httpMethod::DEL, httpMethod::PATCH, httpMethod::HEAD};
     constexpr const char* httpVerbStr[] = {"GET", "PUT", "DELETE", "PATCH", "HEAD"};
 
     struct Header{
@@ -36,7 +36,16 @@ namespace ninttp
 {
 
     struct httpVersion{
-        static constexpr std::optional<httpVersion> fromRequestLine(const std::string& s){
+        static constexpr std::optional<httpVersion> fromRequestLineVersion(const std::string& s){
+            if (s == "HTTP/0.9") return httpVersion{0,9};
+            if (s == "HTTP/1.0") return httpVersion{1,0};
+            if (s == "HTTP/1.1") return httpVersion{1,1};
+            if (s == "HTTP/2.0") return httpVersion{2,0};
+            if (s == "HTTP/3.0") return httpVersion{3,0};
+            return std::nullopt;
+        }
+
+        static constexpr std::optional<httpVersion> fromRequestLineVersion(std::string_view s) noexcept{
             if (s == "HTTP/0.9") return httpVersion{0,9};
             if (s == "HTTP/1.0") return httpVersion{1,0};
             if (s == "HTTP/1.1") return httpVersion{1,1};

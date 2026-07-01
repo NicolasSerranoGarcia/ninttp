@@ -48,7 +48,7 @@ namespace ninttp::internal
                             if(!ss)
                                 return std::unexpected{httpParseError{std::string("Malformed status line")}};
 
-                            if(auto v = httpVersion::fromRequestLine(version); !v.has_value() || v.value().major != ver.major)
+                            if(auto v = httpVersion::fromRequestLineVersion(version); !v.has_value() || v.value().major != ver.major)
                                 return std::unexpected{httpParseError{std::string("Cannot parse version ") + version + 
                                                         std::string(" with the specified version ") + ver.toString()}};
                             else

@@ -8,6 +8,8 @@
 #include <expected>
 #include <cassert>
 #include <iostream>
+#include <span>
+#include <string_view>
 
 #include "http_parse_error.hpp"
 #include "../types.hpp"
@@ -33,45 +35,78 @@ namespace ninttp::internal
             //message, which then can get passed to a RequestHandler for example that 
             std::expected<httpParseStatus, httpParseError> append(const std::string& received){
                 assert(state != Processing::Finished);
-                //we should assert that the last time we called append, we did not lazyly proces
+                constructed.append(received);
+
                 while(1){
-                    constructed.append(received);
                     switch(state){
                         //first time parsing. Store until we find CRLF and then process once
                         case Processing::RequestLine:{
-                            std::istringstream ss(constructed);
-                            size_t lineEnd;
+                            std::string::size_type lineEnd;
+                            //even if we cant find the CRLF (given that we still havent got to it), we could also check for identifiers of other parts of the
+                            //message (like headers or other parts of the body), to lookahead and report that the CRLF is missing, and the parser is expecting
+                            //it to continue, even though it seems like the message is "complete"? kind of what compilers do to report not just the first error
+                            //they find, but skip it and find more errors downstream
                             if(lineEnd = constructed.find("\r\n"); lineEnd == std::string::npos)
                                 return httpParseStatus::NeedData;
 
-                            std::string verbStr;
-                            std::string version;
-                            //this is incorrect bc we are not assured the whole line has been sent. We should store in a buffer until we see the CRLF
-                            ss >> verbStr >> request.resource >> version;
+                            std::string_view requestLine(constructed.c_str(), lineEnd);
 
-                            if(!ss)
-                                return std::unexpected{httpParseError{std::string("Malformed request line")}};
+                            assert(lastProcessedIdx == std::string::npos);
 
-                            //for now return an error but we could simply ignore the message bc it is not malformed if it is a different supported version
-                            if(auto v = httpVersion::fromRequestLine(version); !v.has_value() || v.value().major != ver.major)
-                                return std::unexpected{httpParseError{std::string("Cannot parse version ") + version + 
-                                                        std::string(" with the specified version ") + ver.toString()}};
+                            if(hasPrecedingWhitespace(requestLine))
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                        .what = "Request line contains preceeding whitespace"}};
 
-                            //TODO: assert if the server should return response as it's version even if the client is of another minor.
+                            
+                            auto sp = requestLine.find(' ');
 
-                            for(const auto verb : all_verbs){
-                                if(std::string(httpVerbStr[static_cast<const int>(verb)]) == verbStr)
-                                    request.method = verb;
+                            if(sp == std::string::npos)
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
+                                                                        .what = "Missing space delimiter between method and resource"}};
+                    
+                            std::string_view lineMethod = requestLine.substr(0, sp);
+                            //+1 to skip the space
+                            lastProcessedIdx = sp+1;
+
+                            for(const auto m : all_http_methods){
+                                if(std::string(httpVerbStr[static_cast<const int>(m)]) == lineMethod)
+                                    request.method = m;
                             }
 
                             if(request.method == httpMethod::INVALID)
-                                return std::unexpected{httpParseError{std::string("Unrecognized method: ") + verbStr}};
+                                return std::unexpected{httpParseError{std::string("Unrecognized method: ") + std::string(lineMethod)}};
+
+                            if(hasPrecedingWhitespace(requestLine.substr(lastProcessedIdx)))
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                        .what = "Request line contains extra whitespace between method and resource"}};
+
+                            sp = requestLine.find(' ', lastProcessedIdx);
+
+                            if(sp == std::string::npos)
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
+                                                                        .what = "Missing space delimiter between resource and version"}};
+
+                            request.resource = requestLine.substr(lastProcessedIdx, sp - lastProcessedIdx);
+                            
+                            lastProcessedIdx = sp+1;
+
+                            if(hasPrecedingWhitespace(requestLine.substr(lastProcessedIdx)))
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                        .what = "Request line contains extra whitespace between resource and version"}};
+
+                            std::string_view version = requestLine.substr(lastProcessedIdx, lineEnd - lastProcessedIdx);
+
+                            if(auto v = httpVersion::fromRequestLineVersion(version); !v.has_value() || v.value().major != ver.major)
+                                return std::unexpected{httpParseError{std::string("Cannot parse version ") + std::string(version) + 
+                                                        std::string(" with the specified parser version ") + ver.toString()}};
+
+                            //TODO: assert if the server should return response as it's version even if the client is of another minor.
 
                             //must not return npos and we should have moved to the next line
                             lastProcessedIdx = lineEnd;
                             assert(lastProcessedIdx != std::string::npos);
 
-                            //we do not sum +2 to the lastProcessedIdx bc the Headers must search for a double CRLF if there are no headers
+                            //we do not sum +2 to the lastProcessedIdx bc the Headers must search for a double CRLF if there are no headers.
                             //In the case there are no headers, we must search for this CRLF and the one that marks the header end.
                             //if there are headers the +2 will be done in headers
 
@@ -252,13 +287,17 @@ namespace ninttp::internal
 
             void reset() noexcept{
                 constructed.clear();
-                lastProcessedIdx = -1;
+                lastProcessedIdx = std::string::npos;
                 bodySize = -1;
                 state = Processing::RequestLine;
             }
 
+            static bool hasPrecedingWhitespace(std::string_view str){
+                return str.starts_with(' ');
+            }
+
             std::string constructed;
-            std::ptrdiff_t lastProcessedIdx = -1;
+            std::string::size_type lastProcessedIdx = std::string::npos;
             //synced with the constructed string as new info gets received
             //TODO: assert this has a move constructor that leaves the object in it's original state, or at least a clear method
             Request request;
