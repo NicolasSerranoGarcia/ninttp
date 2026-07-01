@@ -17,7 +17,7 @@
 namespace ninttp::internal
 {
 
-    //uses builder pattern to craft a Request object that can be retrieved when a packet is completed
+    //uses builder pattern to craft a Request object that can be retrieved when a message is completed
     template<httpVersion ver = http_1_0>
     class httpRequestParser{
 
@@ -35,10 +35,6 @@ namespace ninttp::internal
         };
 
         public:
-            //TODO: we should most definitely delegate to a specific parser depending on the method read. 
-            //most certainly synced with a stream socket connection
-            //we can reuse this structure because the parser is agnostic of the body of the message. It only generates a Request
-            //message, which then can get passed to a RequestHandler for example that 
             std::expected<httpParseStatus, httpParseError> append(const std::string& received){
                 assert(state != Processing::Finished);
                 constructed.append(received);
@@ -178,12 +174,11 @@ namespace ninttp::internal
 
                                     request.version = v.value();
 
-                                    lastProcessedIdx = requestLineEnd;
+                                    //we do sum +2 to the lastProcessedIdx bc the Headers must search for a double CRLF if there are no headers.
+                                    //In the case there are no headers, we must search for this CRLF and the one that marks the header end.
+                                    lastProcessedIdx = requestLineEnd+2;
                                     assert(lastProcessedIdx != std::string::npos);
 
-                                    //we do not sum +2 to the lastProcessedIdx bc the Headers must search for a double CRLF if there are no headers.
-                                    //In the case there are no headers, we must search for this CRLF and the one that marks the header end.
-                                    //if there are headers the +2 will be done in headers
 
                                     std::clog << "[http.request_parser] state=RequestLine -> Headers\n";
                                     
@@ -196,76 +191,30 @@ namespace ninttp::internal
 
                         case Processing::Headers:{
                             assert(request.method != httpMethod::INVALID);
-                            size_t headerEnd;
+                            size_t currentHeaderEnd;
 
-                            std::clog << "[http.request_parser] state=Headers; searching header terminator\n";
-                            //Headers are only processed if they get past this condition, which means all headers have arrived
-                            //as this is the parser, we do not assume anything about the state of the connection.
-                            // ww assume the parser receives a continuous stream of well formed data and that once we reach
-                            //the end we return the request
-                            if(headerEnd = constructed.find("\r\n\r\n", lastProcessedIdx); headerEnd == std::string::npos){
-                                std::clog << "[http.request_parser] state=Headers; did not find CRLFCRLF for headers\n";
-                                return httpParseStatus::NeedData;
-                            }
-
-                            //all that's next is only executed once due to the Headers having ended and therefore the state changing also
-
-                            //there are no headers. As we delayed the +2 from the RequestLine we must do double here
-                            //this is because we did yet not move the processIndex, which means that if we find headerEnd in the same position it is because a CRLF followed our
-                            //our last CRLF from the Request line end
-                            if(lastProcessedIdx == headerEnd){
-                                lastProcessedIdx += 4; // to account for the double CRLF
-                                state = Processing::Finished;
-                                return httpParseStatus::Done;
-                            }
-
-                            //there is at least 1 header so we discard the CRLF from the request line
-                            lastProcessedIdx += 2;
-
-                            while(lastProcessedIdx < headerEnd){
-                                size_t lineEnd;
-                                
-                                //TODO: NeedData returns are really calling for coroutines
-                                if(lineEnd = constructed.find("\r\n", lastProcessedIdx); lineEnd == std::string::npos)
+                            while(1){
+                                //SYNC POINT: CRLF delimiting one header at a time
+                                if(currentHeaderEnd = constructed.find("\r\n", lastProcessedIdx); currentHeaderEnd == std::string::npos)
                                     return httpParseStatus::NeedData;
 
-                                //header is between lastProcessedIdx and lineEnd
-                                auto colon = constructed.find(':', lastProcessedIdx);
-
-                                if(colon == std::string::npos)
-                                    return std::unexpected{httpParseError{ .what = "Malformed http packet"}};
-
-                                internal::Header header;
-
-                                while(lastProcessedIdx != colon){
-                                    header.key += constructed[lastProcessedIdx];
-                                    lastProcessedIdx++;
-                                }
-                                //must have processed until lastProcessedIdx == colon
-                                assert(lastProcessedIdx < lineEnd);
-
-                                if(constructed[lastProcessedIdx+1] == ' ')
-                                    lastProcessedIdx++;
-
-                                while(lastProcessedIdx != lineEnd){
-                                    header.value += constructed[lastProcessedIdx];
-                                    lastProcessedIdx++;
+                                //there are no remaining headers
+                                if(lastProcessedIdx == currentHeaderEnd){
+                                    lastProcessedIdx += 2;
+                                    //TODO: make body responsible for checking if there is an actual size, instead of jumping directly to the finsihed state. 
+                                    //This avoids double state
+                                    state = Processing::Body;
+                                    break;
                                 }
 
-                                //if this is the last header this will leave lastProcessedIdx-2 == headerEnd
-                                lastProcessedIdx += 2;
+                                auto header = getHeader(currentHeaderEnd);
 
-                                request.headers.push_back(std::move(header));
+                                if(!header.has_value())
+                                    return std::unexpected{header.error()};
+
+                                request.headers.push_back(header.value());
                             }
 
-                            //if the message contains a body, then it is mandatory that the content length header exists. This will
-                            ///state us the end of the message. If there is none, then we have reached the end of the message
-
-                            //for HEAD methods the conent length marks what could the length have been had it been a GET so we need to account
-                            //for that. For now support for GET
-
-                            //maybe we can use a map for faster access but generally there are very little headers and user
-                            //can get a vector?
                             for(const auto& header : request.headers){
                                 if(header.key != std::string("Content-Length"))
                                     continue;
@@ -297,10 +246,6 @@ namespace ninttp::internal
                                 return httpParseStatus::Done;
                             }
 
-                            assert(lastProcessedIdx-2 == headerEnd);
-
-                            lastProcessedIdx +=2;
-
                             std::clog << "[http.request_parser] state=Headers -> Body; body_size=" << bodySize << '\n';
 
                             state = Processing::Body;
@@ -310,12 +255,17 @@ namespace ninttp::internal
                         
                         case Processing::Body:{
                             //we start at the next character of the CRLF that separates the headers and body
-                        
+
+                            if(bodySize == -1){
+                                state = Processing::Finished;
+                                return httpParseStatus::Done;
+                            }
+
                             if(constructed.size() - lastProcessedIdx < bodySize)
                                 return httpParseStatus::NeedData;
 
                             request.body.emplace();
-                                
+
                             for(int i = 0; i != bodySize; i++)
                                 request.body->push_back(constructed[lastProcessedIdx + i]);
                             
@@ -380,6 +330,37 @@ namespace ninttp::internal
 
             static bool hasTrailingWhitespace(std::string_view str){
                 return str.ends_with(' ');
+            }
+
+            //dependent upon the state of constructed and lastProcessedIdx. This function just wraps the code that otherwise would be in the Header section of append,
+            //so only groups code to make it clearer.
+            //also advances lastProcessedIdx to the next header start
+            std::expected<Header, httpParseError> getHeader(std::string::size_type currentHeaderEnd){
+                std::string_view headers = std::string_view{constructed}.substr(lastProcessedIdx);
+
+                auto colon = headers.find(':', lastProcessedIdx);
+
+                if(colon == std::string::npos)
+                    //TODO: use the context atribute for aditional info, giving probably the whole header line
+                    return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
+                                                            .what = "Missing colon delimiter for current header"}};
+
+                internal::Header header{ .key = std::string(headers.substr(lastProcessedIdx, colon - lastProcessedIdx))};
+
+                lastProcessedIdx = colon;
+                //must have processed until lastProcessedIdx == colon
+                assert(lastProcessedIdx < currentHeaderEnd);
+
+                if(constructed[lastProcessedIdx+1] == ' ')
+                    lastProcessedIdx++;
+
+                header.value = headers.substr(lastProcessedIdx, currentHeaderEnd - lastProcessedIdx);
+
+                lastProcessedIdx = currentHeaderEnd + 2;
+
+                //TODO: to avoid extra O(headers.size()) we can check here for Content-Length or Chunck-Encoding and save its value
+
+                return std::move(header);
             }
 
             std::string constructed;
