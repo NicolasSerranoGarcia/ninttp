@@ -9,17 +9,20 @@ namespace ninttp::internal
         Done
     };
 
+    //TODO: map to its http errors
     enum class httpParseErrorType{
         UnrecognizedToken,
         ExpectedMissingToken,
         ExtraWhitespace,
-        UnsupportedVersion,
-        UnrecognizedVersion,
+        UnsupportedVersion, //505 HTTP Version Not supported
+        UnrecognizedVersion, //400 Bad Request
         RequestLineTooLong,
         TargetTooLong,
         MethodTooLong,
         VersionTooLong,
-        InvalidLength
+        InvalidLength,
+        DuplicatedHeader,
+        IncompatibleHeaders //400 Bad Request
     };
 
     struct httpParseError{

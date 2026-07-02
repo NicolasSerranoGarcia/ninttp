@@ -20,6 +20,8 @@ namespace ninttp::internal
 {
 
     //uses builder pattern to craft a Request object that can be retrieved when a message is completed
+    //TODO: add extra state variable to allow retrieving the leftover bytes and the request without reseting the object.
+    //this way we can reuse the object and expand its lifetime 
     template<httpVersion ver = http_1_0>
     class httpRequestParser{
 
@@ -101,7 +103,7 @@ namespace ninttp::internal
                                     if(requestLineEnd != std::string::npos && (targetVersionSP == std::string::npos || requestLineEnd < targetVersionSP))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
                                                                                 .what = "Missing space delimiter between target and version"}};
-                                    
+
 
                                     if(targetVersionSP == std::string::npos){
                                         //TODO: additionally maybe validate that target exists when constructing gradually?
@@ -181,7 +183,6 @@ namespace ninttp::internal
                                     lastProcessedIdx = requestLineEnd+2;
                                     assert(lastProcessedIdx != std::string::npos);
 
-
                                     std::clog << "[http.request_parser] state=RequestLine -> Headers\n";
                                     
                                     state = Processing::Headers;
@@ -206,29 +207,38 @@ namespace ninttp::internal
                                     break;
                                 }
 
+                                //always normalizes the header key to be lowercase
                                 auto header = getHeader(currentHeaderEnd);
 
                                 if(!header.has_value())
-                                    return std::unexpected{header.error()};
+                                    return std::unexpected{std::move(header).error()};
 
                                 const auto parsedHeader = std::move(header).value();
-                                if(parsedHeader.key == "Content-Length"){
+                                if(parsedHeader.key == "content-length"){
+
+                                    if(request.headers.contains("content-length")){
+                                        if(parsedHeader.value != request.headers["content-length"])
+                                            return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader, 
+                                                                                    .what = "Content-Length header appears more than once with different values"}};
+                                    } else if(request.headers.contains("transfer-encoding")){
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::IncompatibleHeaders, 
+                                                                                .what = "Request contains both Content-Length and Transfer-Encoding headers"}};
+                                    }
+
                                     const char* first = parsedHeader.value.data();
                                     const char* last = first + parsedHeader.value.size();
                                     auto [ptr, ec] = std::from_chars(first, last, bodySize);
 
-                                    if(ec == std::errc::invalid_argument || ptr != last){
+                                    if(ec == std::errc::invalid_argument || ptr != last)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
                                                                                 .what = std::string("Expected valid Content-Length, given ") + parsedHeader.value}};
-                                    }
 
-                                    if(ec == std::errc::result_out_of_range){
+                                    if(ec == std::errc::result_out_of_range)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
                                                                                 .what = "Content-Length field exceeds allowed range"}};
-                                    }
                                 }
 
-                                request.headers.push_back(parsedHeader);
+                                request.headers[parsedHeader.key] = parsedHeader.value;
                             }
 
                             if(bodySize == 0){
@@ -245,8 +255,7 @@ namespace ninttp::internal
 
                             break;
                         }
-                        
-                        //TODO: implement body correctly
+
                         case Processing::Body:{
                             //we start at the next character of the CRLF that separates the headers and body
 
@@ -301,7 +310,7 @@ namespace ninttp::internal
 
             Request getRequest() noexcept{
                 assert(state == Processing::Finished);
-                return std::move(request); //TODO: check the move constructor of Request and assert it leaves it as the default constructor (invalid)
+                return std::move(request);
             }
 
             bool hasLeftoverBytes() const noexcept{
@@ -315,32 +324,42 @@ namespace ninttp::internal
                 return std::move(leftoverBytes);
             }
 
-        private:
-
-            void reset() noexcept{
+            //correct workflow: getLeftOverBytes || getRequest and then reset. Calling reset on a parser with a ready request or leftover flushes the constructed result at any point.
+            //use at your own risk
+            constexpr void reset() noexcept{
                 constructed.clear();
                 lastProcessedIdx = std::string::npos;
                 bodySize = 0;
                 state = Processing::RequestLine;
                 requestLineState = RequestLineProcessing::Method;
+                request.reset();
             }
 
-            static bool hasPrecedingWhitespace(std::string_view str){
+        private:
+
+            constexpr static bool hasPrecedingWhitespace(std::string_view str){
                 return str.starts_with(' ');
             }
 
-            static bool hasPrecedingWhitespace(const std::string& str){
+            constexpr static bool hasPrecedingWhitespace(const std::string& str){
                 return str.starts_with(' ');
             }
 
-            static bool hasTrailingWhitespace(std::string_view str){
+            constexpr static bool hasTrailingWhitespace(std::string_view str){
                 return str.ends_with(' ');
+            }
+
+            constexpr static std::string toLower(std::string str) noexcept{
+                for(auto& c : str)
+                    c = std::tolower(c);
+
+                return std::move(str);
             }
 
             //dependent upon the state of constructed and lastProcessedIdx. This function just wraps the code that otherwise would be in the Header section of append,
             //so only groups code to make it clearer.
             //also advances lastProcessedIdx to the next header start
-            std::expected<Header, httpParseError> getHeader(std::string::size_type currentHeaderEnd){
+            constexpr std::expected<Header, httpParseError> getHeader(std::string::size_type currentHeaderEnd){
                 std::string_view headers = std::string_view{constructed};
 
                 auto colon = headers.find(':', lastProcessedIdx);
@@ -350,7 +369,7 @@ namespace ninttp::internal
                     return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
                                                             .what = "Missing colon delimiter for current header"}};
 
-                internal::Header header{ .key = std::string(headers.substr(lastProcessedIdx, colon - lastProcessedIdx))};
+                internal::Header header{ .key = toLower(std::string{headers.substr(lastProcessedIdx, colon - lastProcessedIdx)})};
 
                 lastProcessedIdx = colon+1;
                 assert(lastProcessedIdx < currentHeaderEnd);
@@ -370,9 +389,10 @@ namespace ninttp::internal
             std::string constructed;
             std::string::size_type lastProcessedIdx = std::string::npos;
             //synced with the constructed string as new info gets received
+
             //TODO: assert this has a move constructor that leaves the object in it's original state, or at least a clear method
             Request request;
-            std::size_t bodySize = 0; // maybe use something bigger in the future?
+            std::size_t bodySize = 0;
             std::size_t remaining;
             Processing state = Processing::RequestLine;
             RequestLineProcessing requestLineState = RequestLineProcessing::Method;

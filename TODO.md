@@ -14,12 +14,8 @@ Main references:
 ### Core message parsing
 
 - Strictly parse status lines: `HTTP-version SP status-code SP reason-phrase CRLF`.
-- Fix HTTP version handling:
-  - accept `HTTP/1.0` and `HTTP/1.1`;
-  - reject unsupported versions cleanly;
 - Validate header field names as HTTP tokens.
 - Parse header values with correct optional whitespace handling.
-- Treat header names as case-insensitive.
 - Define duplicate-header behavior, including fields that can be combined and fields that cannot.
 - Reject or explicitly handle obsolete folded header lines.
 - Add configurable limits for:
@@ -28,7 +24,6 @@ Main references:
   - header count;
   - body size;
   - request-target length.
-- Preserve unconsumed bytes after parsing one message so pipelined messages can be parsed correctly.
 
 ### Message body framing
 
@@ -100,7 +95,6 @@ Main references:
   - `505 HTTP Version Not Supported`.
 - Close the connection after unrecoverable framing errors.
 - Avoid response bodies for methods/status codes that forbid them.
-- Separate HTTP protocol errors from `SocketError`.
 
 ### Header semantics
 

@@ -7,6 +7,7 @@
 #include <ostream>
 #include <string_view>
 #include <array>
+#include <unordered_map>
 
 namespace ninttp::internal{
     enum class httpMethod{
@@ -148,6 +149,9 @@ namespace ninttp
         httpVersion version;
         StatusCode statusCode;
 
+        using key = std::string;
+        using value = std::string;
+
         std::vector<internal::Header> headers;
         std::optional<std::string> body;
 
@@ -203,8 +207,20 @@ namespace ninttp
         internal::httpMethod method = internal::httpMethod::INVALID;
         std::string target;
         httpVersion version;
-        std::vector<internal::Header> headers;
+
+        using key = std::string;
+        using value = std::string;
+
+        std::unordered_map<key, value> headers;
         std::optional<std::string> body;
+
+        void reset(){
+            method = internal::httpMethod::INVALID;
+            target.clear();
+            version = http_1_0;
+            headers.clear();
+            body.reset();
+        }
     };
 
     inline std::ostream& operator<<(std::ostream& os, const Request& request){
@@ -233,7 +249,7 @@ namespace ninttp
         os << ' ' << request.target << '\n';
 
         for(const auto& header : request.headers)
-            os << header.key << ": " << header.value << '\n';
+            os << header.first << ": " << header.second << '\n';
 
         if(request.body.has_value())
             os << '\n' << request.body.value();
