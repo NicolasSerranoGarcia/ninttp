@@ -1,0 +1,11 @@
+option(NINTTP_BUILD_TESTS "Build ninttp tests" OFF)
+option(NINTTP_BUILD_EXAMPLES "Build ninttp examples" OFF)
+option(NINTTP_FD_CLOSE_EXEC "Mark POSIX socket file descriptors close-on-exec" ON)
+
+# automatically set depending on if the project is being called as a subproject
+# (in that case there is usually no need for an installation target)
+option(NINTTP_INSTALL "Generate target for installing ninttp" ${is_top_level})
+
+SET_IF_UNDEFINED(NINTTP_INSTALL_CMAKEDIR
+    "${CMAKE_INSTALL_LIBDIR}/cmake/ninttp-${PROJECT_VERSION}" CACHE STRING
+    "Install path for ninttp package-related CMake files")
