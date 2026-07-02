@@ -46,18 +46,21 @@ include(cmake/backend_detection.cmake)
 # LIBRARY HEADERS
 
 set(public_headers
-    include/ninttp/nintraits.hpp
-    include/ninttp/nin_error.hpp
-    include/ninttp/socket/socket_error_category.hpp
-    include/ninttp/socket/socket_error.hpp
-    include/ninttp/socket/types.hpp
+    include/ninttp/platform_traits.hpp
+    include/ninttp/error/nin_error.hpp
+    include/ninttp/socket/error/socket_error_category.hpp
+    include/ninttp/socket/error/socket_error.hpp
+    include/ninttp/socket/traits.hpp
     include/ninttp/socket/utils.hpp
+    include/ninttp/socket/concepts.hpp
     include/ninttp/endpoints.hpp
     include/ninttp/socket/socket.hpp
     include/ninttp/socket/internal/select_backend.hpp
     include/ninttp/socket/internal/socket_state.hpp
     include/ninttp/socket/internal/socket_core.hpp
     include/ninttp/socket/internal/backends/concepts.hpp
+    include/ninttp/socket/internal/backends/socket_close_status.hpp
+    include/ninttp/socket/internal/backends/socket_option.hpp
     include/ninttp/socket/internal/backends/posix.hpp
     include/ninttp/socket/internal/backends/winsock.hpp
     include/ninttp/http/http_client.hpp

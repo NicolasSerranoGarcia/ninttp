@@ -14,41 +14,17 @@
 #include <concepts>
 #include <cstddef>
 #include <expected>
-#include <optional>
 #include <span>
 #include <string>
 #include <type_traits>
 
 #include "../../../endpoints.hpp"
-#include "../../socket_error_category.hpp"
-#include "../../types.hpp"
+#include "../../error/socket_error_category.hpp"
+#include "../../traits.hpp"
+#include "socket_close_status.hpp"
+#include "socket_option.hpp"
 
-namespace ninttp::internal {
-    /**
-     * @brief Describes whether a failed close released ownership of the native socket.
-     */
-    enum class SocketCloseDisposition {
-        Released,
-        Retry,
-        Unspecified
-    };
-
-    /**
-     * @brief Backend socket options exposed through the socket facade.
-     */
-    enum class SocketOption {
-        IPv6Only
-    };
-
-    /**
-     * @brief Close result containing both ownership disposition and the native error.
-     */
-    template<typename ErrorT>
-    struct SocketCloseStatus {
-        SocketCloseDisposition disposition;
-        std::optional<ErrorT> error;
-    };
-
+namespace ninttp::concepts {
     /**
      * @brief POSIX/Winsock-shaped socket backend contract.
      *
@@ -92,7 +68,7 @@ namespace ninttp::internal {
                     Service service,
                     Protocol protocol,
                     ShutdownPolicy what,
-                    SocketOption option,
+                    internal::SocketOption option,
                     int backlog,
                     const typename Backend::AddressStorageT* addr,
                     typename Backend::AddressLenT addrLen,
@@ -171,4 +147,4 @@ namespace ninttp::internal {
             { Backend::getMsgFromError(err) } -> std::same_as<std::string>;
         };
 
-} // namespace ninttp::internal
+} // namespace ninttp::concepts

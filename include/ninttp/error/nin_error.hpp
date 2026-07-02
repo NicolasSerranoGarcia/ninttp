@@ -2,18 +2,18 @@
 #include <string>
 #include <utility>
 
-#include "socket/socket_error.hpp"
-#include "socket/socket_error_category.hpp"
+#include "../socket/error/socket_error.hpp"
+#include "../socket/error/socket_error_category.hpp"
 
-#include "http/internal/http_parse_error.hpp"
+#include "../http/internal/http_parse_error.hpp"
 
 namespace ninttp{
-    
+
     enum class NinErrorType{
-        Socket, 
+        Socket,
         Parse
     };
-    
+
     //swift style enum, where a .type has an associacted value, represented with an optional present only for that enum case
     struct NinError{
         NinErrorType type;
@@ -34,10 +34,6 @@ namespace ninttp{
 
         static NinError fromHttpParseError(const internal::httpParseError& err){
             return NinError{ .type = NinErrorType::Parse, .parseText = err.parseContextText, .what = err.what};
-        }
-
-        static NinError fromhttpParseError(const internal::httpParseError& err){
-            return fromHttpParseError(err);
         }
     };
 } //namespace ninttp

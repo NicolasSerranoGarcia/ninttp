@@ -1,7 +1,7 @@
 /**
  * @file utils.hpp
  * @author Nicolas Serrano (serranogarcianicolas@gmail.com)
- * @brief Defines socket byte-order conversion helpers.
+ * @brief Defines socket byte-order conversion helpers
  * @version 0.1
  * @date 2026-06-26
  *
@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "../nintraits.hpp"
+#include "../platform_traits.hpp"
 
 #include <cstdint>
 

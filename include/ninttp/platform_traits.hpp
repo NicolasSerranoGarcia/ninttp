@@ -1,3 +1,14 @@
+/**
+ * @file platform_traits.hpp
+ * @author Nicolás Serrano (serranogarcianicolas@gmail.com)
+ * @brief Fallback platform and backend detection when CMake fails
+ * @version 0.2
+ * @date 2026-07-02
+ *
+ * @copyright Copyright (c) 2026 Nicolás Serrano García
+ *
+ */
+
 #pragma once
 
 #include <cstdint>
@@ -8,16 +19,11 @@
     #endif
 #endif
 
-//the name has a prefix to avoid naming issues with system includes
+//Platform endianness
 
-//defines endianness utilities at compile time
-
-//defines NINTTP_BYTE_ORDER to be NINTTP_LITTLE_ENDIAN or NINTTP_BIG_ENDIAN
-//depending on what is the host endianness
-
-//Always defined when including ninendian.hpp
+//Always defined when including platform_traits.hpp
 #define NINTTP_BIG_ENDIAN 4321
-//Always defined when including ninendian.hpp
+//Always defined when including platform_traits.hpp
 #define NINTTP_LITTLE_ENDIAN 1234
 
 #if !defined(NINTTP_BYTE_ORDER) && (defined __unix__ || defined __unix || defined __APPLE__ || defined(__MACH__))
@@ -44,6 +50,7 @@
     #endif
 #endif
 
+//if any of the previous methods work, guess from architectures
 #ifndef NINTTP_BYTE_ORDER
     #if defined(_WIN32) || defined(_WIN64) || defined(_M_IX86) || defined(_M_X64) || defined(_M_ARM) || defined(_M_ARM64)
         #define NINTTP_BYTE_ORDER NINTTP_LITTLE_ENDIAN
@@ -62,11 +69,7 @@
     #define NINTTP_BYTE_ORDER_DEFINED 1
 #endif
 
-//define system flags to know in which platform are we. e.g. (notion):
-//NINTTP_WINDOWS
-//NINTTP_UNIX_COMPLIANT
-//define flags that may change how the API behaves (for example, if the backend between platform A and platform B does not change, then there is no need to add a flag that specifies
-//a difference between both)
+//Platform flags
 
 #if !defined(NINTTP_PLATFORM_WINDOWS) && !defined(NINTTP_PLATFORM_UNIX) && !defined(NINTTP_PLATFORM_UNKNOWN)
     #if defined(_WIN32) || defined(_WIN64)
@@ -78,11 +81,11 @@
     #endif
 #endif
 
-//always set the flag to 0 either when: (both cmake configuration is not used and we are not on windows) or (cmake configuration is used but we are not on windows) 
+//always set the flag to 0 either when: (both cmake configuration is not used and we are not on windows) or (cmake configuration is used but we are not on windows)
 #ifndef NINTTP_PLATFORM_WINDOWS
     #define NINTTP_PLATFORM_WINDOWS 0
 #endif
-//same for the rest
+
 #ifndef NINTTP_PLATFORM_UNIX
     #define NINTTP_PLATFORM_UNIX 0
 #endif

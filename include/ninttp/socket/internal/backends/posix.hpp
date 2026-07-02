@@ -13,7 +13,7 @@
 
 #include "../../../endpoints.hpp"
 #include "concepts.hpp"
-#include "../../types.hpp"
+#include "../../traits.hpp"
 #include "../../utils.hpp"
 
 #include <concepts>

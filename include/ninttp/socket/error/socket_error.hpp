@@ -4,9 +4,9 @@
  * @brief Defines SocketError used on any socket operation
  * @version 0.1
  * @date 2026-04-08
- * 
+ *
  * @copyright Copyright (c) 2026 Nicolás Serrano García
- * 
+ *
  */
 
 #pragma once
@@ -17,7 +17,7 @@
 #include <string>
 #include <string_view>
 
-#include "internal/select_backend.hpp"
+#include "../internal/select_backend.hpp"
 #include "socket_error_category.hpp"
 
 namespace ninttp

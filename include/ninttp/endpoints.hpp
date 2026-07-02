@@ -1,9 +1,20 @@
+/**
+ * @file endpoints.hpp
+ * @author Nicolás Serrano (serranogarcianicolas@gmail.com)
+ * @brief Defines IPv4 and IPv6 enpoints to use with the ninttp interface
+ * @version 0.2
+ * @date 2026-07-02
+ * 
+ * @copyright Copyright (c) 2026 Nicolás Serrano García
+ * 
+ */
+
 #pragma once
 
 #include <array>
 #include <cstdint>
 
-#include "nintraits.hpp"
+#include "platform_traits.hpp"
 
 namespace ninttp
 {

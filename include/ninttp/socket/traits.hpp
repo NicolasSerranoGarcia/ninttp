@@ -1,7 +1,7 @@
 /**
- * @file types.hpp
+ * @file traits.hpp
  * @author Nicolas Serrano (serranogarcianicolas@gmail.com)
- * @brief Defines common socket domain, service, protocol, and shutdown policy types.
+ * @brief Defines common socket domain, service, protocol, and shutdown policy traits.
  * @version 0.1
  * @date 2026-06-26
  *
@@ -46,7 +46,7 @@ namespace ninttp
 
     /**
      * @brief The policy to use when shutting down (parts of) a socket
-     * 
+     *
      * @see toNativeShutdownPolicy
      */
     enum class ShutdownPolicy{

@@ -2,8 +2,8 @@
 
 #include "../socket/socket.hpp"
 #include "../endpoints.hpp"
-#include "../socket/types.hpp"
-#include "../nin_error.hpp"
+#include "../socket/traits.hpp"
+#include "../error/nin_error.hpp"
 #include "internal/http_request_parser.hpp"
 #include "types.hpp"
 

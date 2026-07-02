@@ -19,12 +19,9 @@
 #include <mutex>
 
 #include "backends/concepts.hpp"
-#include "../types.hpp"
-#include "../socket_error.hpp"
+#include "../traits.hpp"
+#include "../error/socket_error.hpp"
 
-//for future: it may take too long on multithreaded programs to capture errno. For that, we could maybe do a "recordLastError" so that you can presave the
-//error, just for handling it in subsequent steps. The message could be created from this memory, just like getErrMessageFromCapture. This way we avoid
-//mixing up errors.
 namespace ninttp::internal
 {
     #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
@@ -38,7 +35,7 @@ namespace ninttp::internal
     //the directives "open", "close" and "release" enable for multiple usage throughout the lifetime. One can also move 
     //an instance to another, which would be an equivalent to an "adopt" method, present on the API. This latter is preferred over the nonthrowing move operator, for the reason
     //being that one can handle the possible error from destroying the previous state of the socket before swapping it. This is better explained in its correspondent methods
-    template <SocketBackend BackendT>
+    template <ninttp::concepts::SocketBackend BackendT>
     class SocketCore{
         public:
             using SocketT = typename BackendT::SocketT;

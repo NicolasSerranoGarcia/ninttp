@@ -19,9 +19,10 @@
 
 #include "internal/select_backend.hpp"
 #include "internal/socket_core.hpp"
-#include "types.hpp"
+#include "concepts.hpp"
+#include "traits.hpp"
 
-#include "socket_error.hpp"
+#include "error/socket_error.hpp"
 
 namespace ninttp
 {
@@ -29,30 +30,6 @@ namespace ninttp
      * @brief Socket core specialized with the backend selected for this platform.
      */
     using SocketBase = ninttp::internal::SocketCore<internal::SelectedBackend>;
-
-    namespace internal
-    {
-        /**
-         * @brief Compile-time socket domain associated with a concrete endpoint type.
-         */
-        template<typename EndpointT>
-        inline constexpr Domain endpointDomain =
-            std::same_as<EndpointT, IPv4Endpoint> ? Domain::IPv4 : Domain::IPv6;
-
-        /**
-         * @brief Checks that a connected socket can adopt a native accepted socket.
-         */
-        template<typename ConnectedSocketT, typename EndpointT>
-        concept AcceptedConnectedSocket = requires(
-            typename SelectedBackend::SocketT socket,
-            Domain domain,
-            Service service,
-            Protocol protocol,
-            const EndpointT& endpoint) {
-                { ConnectedSocketT(socket, domain, service, protocol, endpoint) } noexcept
-                    -> std::same_as<ConnectedSocketT>;
-            };
-    } // namespace internal
 
     /**
      * @brief Stream listener socket bound to one endpoint family.
@@ -70,7 +47,7 @@ namespace ninttp
         //A concept is useless here because there is no beahivoral check, but rather expecting just two types of endpoints
         static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
             "Listener socket only accepts IPv4 or IPv6 endpoints");
-        static_assert(internal::AcceptedConnectedSocket<ConnectedSocketT, EndpointT>,
+        static_assert(concepts::AcceptedConnectedSocket<ConnectedSocketT, EndpointT>,
             "Connected socket must provide a noexcept adoption constructor for accepted sockets");
 
         public:
@@ -81,7 +58,7 @@ namespace ninttp
              * socket fails or if setting the option Ipv6Only for the Ipv6 version of the socket fails.
              */
             ListenerSocket(Protocol proto)
-                : SocketBase(internal::endpointDomain<EndpointT>, Service::Stream, proto)
+                : SocketBase(concepts::endpointDomain<EndpointT>, Service::Stream, proto)
             {
                 //TODO: maybe give a user option in the future to deactivate this, but for the fromStorage 
                 //converters to work without problems we currently deactivate it
@@ -183,7 +160,7 @@ namespace ninttp
              * socket fails.
              */
             StreamSocket(Protocol proto)
-                : SocketBase(internal::endpointDomain<EndpointT>, Service::Stream, proto){}
+                : SocketBase(concepts::endpointDomain<EndpointT>, Service::Stream, proto){}
 
             using SocketBase::close;
             using SocketBase::domain;

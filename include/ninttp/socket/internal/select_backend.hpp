@@ -16,7 +16,7 @@
  * declares its own namespace. Including them inside namespace ninttp::internal
  * would nest the backend declarations as ninttp::internal::ninttp::internal.
  */
-#include "../../nintraits.hpp"
+#include "../../platform_traits.hpp"
 
 #if NINTTP_BACKEND_WINSOCK == 1
     #include "backends/winsock.hpp"

@@ -24,7 +24,7 @@
 #include <string_view>
 #include <string>
 
-#include "../../types.hpp"
+#include "../../traits.hpp"
 #include "../../utils.hpp"
 #include "../../../endpoints.hpp"
 #include "concepts.hpp"
