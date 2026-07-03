@@ -1,6 +1,6 @@
-#include "../types.hpp"
-
 #include <string>
+
+#include "../types.hpp"
 
 namespace ninttp{
     template <internal::httpMethod mode>

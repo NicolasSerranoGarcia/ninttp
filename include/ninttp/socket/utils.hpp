@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "../platform_traits.hpp"
-
 #include <cstdint>
+
+#include "../platform_traits.hpp"
 
 namespace ninttp
 {

@@ -14,13 +14,13 @@
 #include <cassert>
 #include <cstdio>
 #include <expected>
+#include <mutex>
 #include <type_traits>
 #include <utility>
-#include <mutex>
 
 #include "backends/concepts.hpp"
-#include "../traits.hpp"
 #include "../error/socket_error.hpp"
+#include "../traits.hpp"
 
 namespace ninttp::internal
 {

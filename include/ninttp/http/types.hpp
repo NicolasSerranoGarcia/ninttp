@@ -1,13 +1,13 @@
 #pragma once
 
-#include <string>
-#include <optional>
-#include <vector>
-#include <cstddef>
-#include <ostream>
-#include <string_view>
 #include <array>
+#include <cstddef>
+#include <optional>
+#include <ostream>
+#include <string>
+#include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace ninttp::internal{
     enum class httpMethod{

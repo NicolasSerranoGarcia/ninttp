@@ -1,20 +1,20 @@
 #pragma once
 
-#include "../socket/socket.hpp"
-#include "../endpoints.hpp"
-#include "../socket/traits.hpp"
-#include "../error/nin_error.hpp"
-#include "internal/http_response_parser.hpp"
-#include "internal/http_request_builder.hpp"
-#include "types.hpp"
-
 #include <array>
-#include <concepts>
-#include <vector>
-#include <expected>
-#include <utility>
-#include <iostream>
 #include <cassert>
+#include <concepts>
+#include <expected>
+#include <iostream>
+#include <utility>
+#include <vector>
+
+#include "../endpoints.hpp"
+#include "../error/nin_error.hpp"
+#include "../socket/socket.hpp"
+#include "../socket/traits.hpp"
+#include "internal/http_request_builder.hpp"
+#include "internal/http_response_parser.hpp"
+#include "types.hpp"
 
 namespace ninttp
 {

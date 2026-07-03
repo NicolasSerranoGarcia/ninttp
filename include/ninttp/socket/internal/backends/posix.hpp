@@ -11,27 +11,27 @@
 
 #pragma once
 
-#include "../../../endpoints.hpp"
-#include "concepts.hpp"
-#include "../../traits.hpp"
-#include "../../utils.hpp"
-
-#include <concepts>
-#include <expected>
-#include <optional>
-#include <span>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <array>
 #include <cassert>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
 #include <cerrno>
-#include <fcntl.h>
-#include <limits>
+#include <concepts>
 #include <cstring> // strerror_r
+#include <expected>
+#include <limits>
+#include <optional>
+#include <span>
 #include <string>
-#include <unistd.h>
+
+#include "../../../endpoints.hpp"
+#include "../../traits.hpp"
+#include "../../utils.hpp"
+#include "concepts.hpp"
 
 
 namespace ninttp::internal
