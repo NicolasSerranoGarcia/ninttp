@@ -207,24 +207,21 @@ namespace ninttp::internal
                                     break;
                                 }
 
-                                //always normalizes the header key to be lowercase
                                 auto header = getHeader(currentHeaderEnd);
 
                                 if(!header.has_value())
                                     return std::unexpected{std::move(header).error()};
 
-                                const auto parsedHeader = std::move(header).value();
-                                if(parsedHeader.key == "content-length"){
+                                auto parsedHeader = std::move(header).value();
+                                parsedHeader.key = toLower(std::move(parsedHeader.key));
 
-                                    if(request.headers.contains("content-length")){
-                                        if(parsedHeader.value != request.headers["content-length"])
-                                            return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader, 
-                                                                                    .what = "Content-Length header appears more than once with different values"}};
-                                    } else if(request.headers.contains("transfer-encoding")){
-                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::IncompatibleHeaders, 
-                                                                                .what = "Request contains both Content-Length and Transfer-Encoding headers"}};
-                                    }
-
+                                //TODO: normalize standard headers into an enum to avoid string comparisons
+                                if((parsedHeader.key == "content-length" && request.headers.contains("transfer-encoding")) ||
+                                    (parsedHeader.key == "transfer-encoding" && request.headers.contains("content-length")))
+                                {
+                                    return std::unexpected{httpParseError{ .type = httpParseErrorType::IncompatibleHeaders, 
+                                                                            .what = "Request contains both Content-Length and Transfer-Encoding headers"}};
+                                } else if(parsedHeader.key == "content-length"){
                                     const char* first = parsedHeader.value.data();
                                     const char* last = first + parsedHeader.value.size();
                                     auto [ptr, ec] = std::from_chars(first, last, bodySize);
@@ -236,10 +233,32 @@ namespace ninttp::internal
                                     if(ec == std::errc::result_out_of_range)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
                                                                                 .what = "Content-Length field exceeds allowed range"}};
+
+                                    if(request.headers.contains(parsedHeader.key)){
+                                        if(request.headers[parsedHeader.key] != parsedHeader.value)
+                                            return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader,
+                                                                                    .what = "content-length header appears more than once with different values"}};
+
+                                        continue;
+                                    }
                                 }
 
-                                request.headers[parsedHeader.key] = parsedHeader.value;
+                                if(parsedHeader.key == "host" && request.headers.contains("host")){
+                                    return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader,
+                                                                            .what = "host header appears more than once"}};
+                                }
+
+                                if(request.headers.contains(parsedHeader.key)){
+                                    request.headers[parsedHeader.key].append(", ");
+                                    request.headers[parsedHeader.key].append(parsedHeader.value);
+                                } else {
+                                    request.headers[parsedHeader.key] = parsedHeader.value;
+                                }
                             }
+
+                            if(!request.headers.contains("host"))
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::MissingHostHeader,
+                                                                        .what = "Expected request to contain required host header but did not find it"}};
 
                             if(bodySize == 0){
                                 leftoverBytes.append(std::string_view{constructed}.substr(lastProcessedIdx));
@@ -349,11 +368,18 @@ namespace ninttp::internal
                 return str.ends_with(' ');
             }
 
-            constexpr static std::string toLower(std::string str) noexcept{
-                for(auto& c : str)
-                    c = std::tolower(c);
+            constexpr static char asciiLower(char c) noexcept{
+                if(c >= 'A' && c <= 'Z')
+                    return static_cast<char>(c + ('a' - 'A'));
 
-                return std::move(str);
+                return c;
+            }
+
+            constexpr static std::string toLower(std::string str) noexcept{
+                for(char& c : str)
+                    c = asciiLower(c);
+
+                return str;
             }
 
             //dependent upon the state of constructed and lastProcessedIdx. This function just wraps the code that otherwise would be in the Header section of append,
@@ -369,7 +395,7 @@ namespace ninttp::internal
                     return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
                                                             .what = "Missing colon delimiter for current header"}};
 
-                internal::Header header{ .key = toLower(std::string{headers.substr(lastProcessedIdx, colon - lastProcessedIdx)})};
+                internal::Header header{ .key = std::string{headers.substr(lastProcessedIdx, colon - lastProcessedIdx)}};
 
                 lastProcessedIdx = colon+1;
                 assert(lastProcessedIdx < currentHeaderEnd);
@@ -380,8 +406,6 @@ namespace ninttp::internal
                 header.value = headers.substr(lastProcessedIdx, currentHeaderEnd - lastProcessedIdx);
 
                 lastProcessedIdx = currentHeaderEnd + 2;
-
-                //TODO: to avoid extra O(headers.size()) we can check here for Content-Length or Chunck-Encoding and save its value
 
                 return std::move(header);
             }

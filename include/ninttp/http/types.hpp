@@ -24,6 +24,14 @@ namespace ninttp::internal{
     constexpr const std::array<httpMethod, 5> allHttpMethods{httpMethod::GET, httpMethod::PUT, httpMethod::DEL, httpMethod::PATCH, httpMethod::HEAD};
     constexpr const std::array<std::string_view, 5> allHttpMetodsStr{"GET", "PUT", "DELETE", "PATCH", "HEAD"};
 
+    enum class httpHeader{
+        ContentLength,
+        Host,
+        TransferEncoding
+    };
+
+    std::array<std::pair<httpHeader, std::string>> 
+
     struct Header{
         std::string key;
         std::string value;
