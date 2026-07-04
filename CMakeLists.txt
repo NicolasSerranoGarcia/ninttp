@@ -66,9 +66,7 @@ set(public_headers
     include/ninttp/http/http_client.hpp
     include/ninttp/http/http_server.hpp
     include/ninttp/http/types.hpp
-    include/ninttp/http/internal/http_request_builder.hpp
     include/ninttp/http/internal/http_request_parser.hpp
-    include/ninttp/http/internal/http_response_builder.hpp
     include/ninttp/http/internal/http_response_parser.hpp
 )
 

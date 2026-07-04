@@ -7,6 +7,7 @@
 ## HTTP/1.x RFC compliance roadmap
 
 Main references:
+
 - RFC 9110: HTTP Semantics
 - RFC 9111: HTTP Caching
 - RFC 9112: HTTP/1.1
@@ -16,7 +17,6 @@ Main references:
 - Strictly parse status lines: `HTTP-version SP status-code SP reason-phrase CRLF`.
 - Validate header field names as HTTP tokens.
 - Parse header values with correct optional whitespace handling.
-- Define duplicate-header behavior, including fields that can be combined and fields that cannot.
 - Reject or explicitly handle obsolete folded header lines.
 - Add configurable limits for:
   - start-line length;
@@ -27,11 +27,6 @@ Main references:
 
 ### Message body framing
 
-- Implement full `Content-Length` validation:
-  - non-negative decimal values;
-  - duplicate matching values;
-  - duplicate conflicting values as framing errors;
-  - overflow-safe parsing.
 - Implement `Transfer-Encoding`, especially `chunked`.
 - Parse chunk sizes, chunk extensions, chunk data, final chunk, and trailer fields.
 - Enforce the precedence rules between `Transfer-Encoding` and `Content-Length`.

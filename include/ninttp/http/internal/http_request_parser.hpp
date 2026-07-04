@@ -16,6 +16,9 @@
 #include "http_parse_error.hpp"
 #include "../types.hpp"
 
+//Possible optimizations: why not make every field of the request a view of the original buffer? Instead of copying parts of the buffer to the return object,
+//we MOVE the constructed buffer to the request, as private member, and make getters or objects return views of the private object
+
 namespace ninttp::internal
 {
 
@@ -200,6 +203,11 @@ namespace ninttp::internal
                                 //SYNC POINT: CRLF delimiting one header at a time
                                 if(currentHeaderEnd = constructed.find("\r\n", lastProcessedIdx); currentHeaderEnd == std::string::npos)
                                     return httpParseStatus::NeedData;
+
+                                if(hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
+                                    return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                            .what = "encountered preceeding whitespace parsing header " + 
+                                                                                constructed.substr(lastProcessedIdx, currentHeaderEnd - lastProcessedIdx)}};
 
                                 //there are no remaining headers
                                 if(lastProcessedIdx == currentHeaderEnd){

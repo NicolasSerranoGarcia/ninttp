@@ -11,13 +11,15 @@ void client(){
 
         std::expected<Response, NinError> got;
 
-        if(got = client.GET("/"); !got.has_value())
+        if(got = client.GET("/"); !got.has_value()){
             std::cerr << got.error().what << std::endl;
+            return;
+        }
 
         std::cout << got.value() << std::endl;
 
-    } catch(SocketError& err){
-        std::cerr << err.what();
+    } catch(NinError& err){
+        std::cerr << err.what;
     }
 }
 

@@ -30,8 +30,6 @@ namespace ninttp::internal{
         TransferEncoding
     };
 
-    std::array<std::pair<httpHeader, std::string>> 
-
     struct Header{
         std::string key;
         std::string value;

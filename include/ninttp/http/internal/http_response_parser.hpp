@@ -6,6 +6,7 @@
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 #include "../types.hpp"
@@ -46,16 +47,19 @@ namespace ninttp::internal
                             ss >> version >> response.statusCode;
 
                             if(!ss)
-                                return std::unexpected{httpParseError{std::string("Malformed status line")}};
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                        .what = "Malformed status line"}};
 
                             if(auto v = httpVersion::fromRequestLineVersion(version); !v.has_value() || v.value().major != ver.major)
-                                return std::unexpected{httpParseError{std::string("Cannot parse version ") + version + 
-                                                        std::string(" with the specified version ") + ver.toString()}};
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::UnsupportedVersion,
+                                                                        .what = std::string("Cannot parse version ") + version +
+                                                                            std::string(" with the specified version ") + ver.toString()}};
                             else
                                 response.version = v.value();
 
                             if(response.statusCode < 100 || response.statusCode > 999)
-                                return std::unexpected{httpParseError{std::string("Unrecognized status code: ") + std::to_string(response.statusCode)}};
+                                return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                        .what = std::string("Unrecognized status code: ") + std::to_string(response.statusCode)}};
 
                             lastProcessedIdx = lineEnd;
                             assert(lastProcessedIdx != std::string::npos);
@@ -96,7 +100,8 @@ namespace ninttp::internal
                                 auto colon = constructed.find(':', lastProcessedIdx);
 
                                 if(colon == std::string::npos)
-                                    return std::unexpected{httpParseError{ .what = "Malformed http packet"}};
+                                    return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
+                                                                            .what = "Malformed http packet"}};
 
                                 internal::Header header;
 
@@ -128,17 +133,20 @@ namespace ninttp::internal
                                     bodySize = std::stoi(header.value);
                                 } catch(std::invalid_argument& inv){
                                     return std::unexpected{
-                                        httpParseError{ .what = std::string{"Expected valid Content-Length, given "} + header.value }
+                                        httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                        .what = std::string{"Expected valid Content-Length, given "} + header.value }
                                     };
                                 } catch(std::out_of_range& r){
                                     return std::unexpected{
-                                        httpParseError{ .what = std::string{"Content-Length field exceeds allowed range"} }
+                                        httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                        .what = std::string{"Content-Length field exceeds allowed range"} }
                                     };
                                 }
 
                                 if(bodySize < 0){
                                     return std::unexpected{
-                                        httpParseError{ .what = std::string{"Expected Content-Length field to be non-negative, given "} + header.value }
+                                        httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                        .what = std::string{"Expected Content-Length field to be non-negative, given "} + header.value }
                                     };
                                 }
 

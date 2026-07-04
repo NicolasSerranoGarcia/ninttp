@@ -12,7 +12,6 @@
 #include "../error/nin_error.hpp"
 #include "../socket/socket.hpp"
 #include "../socket/traits.hpp"
-#include "internal/http_request_builder.hpp"
 #include "internal/http_response_parser.hpp"
 #include "types.hpp"
 

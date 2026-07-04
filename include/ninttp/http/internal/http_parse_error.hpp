@@ -22,13 +22,13 @@ namespace ninttp::internal
         VersionTooLong,
         InvalidLength,
         DuplicatedHeader,
-        IncompatibleHeaders //400 Bad Request,
+        IncompatibleHeaders, //400 Bad Request,
         MissingHostHeader
     };
 
     struct httpParseError{
+        httpParseErrorType type;
         std::string what;
         std::string parseContextText;
-        httpParseErrorType type;
     };
 } // namespace ninttp::internal
