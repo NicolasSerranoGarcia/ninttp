@@ -18,7 +18,7 @@ namespace ninttp{
     struct NinError{
         NinErrorType type;
 
-        std::optional<std::string> parseText;
+        std::optional<internal::httpParseErrorType> parseErrorType;
         std::optional<SocketErrorCategory> socketCategory;
 
         //preallocated message comming from the underlying error. Must be preallocated by the caller so that allocation errors are handled before construction.
@@ -33,7 +33,7 @@ namespace ninttp{
         }
 
         static NinError fromHttpParseError(const internal::httpParseError& err){
-            return NinError{ .type = NinErrorType::Parse, .parseText = err.parseContextText, .what = err.message()};
+            return NinError{ .type = NinErrorType::Parse, .parseErrorType = err.type, .what = err.message()};
         }
     };
 } //namespace ninttp

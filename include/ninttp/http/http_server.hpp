@@ -6,6 +6,7 @@
 #include <expected>
 #include <functional>
 #include <iostream>
+#include <span>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -16,6 +17,7 @@
 #include "../socket/traits.hpp"
 #include "internal/http_request_parser.hpp"
 #include "types.hpp"
+#include "internal/http_error_factory.hpp"
 
 namespace ninttp
 {
@@ -76,8 +78,23 @@ namespace ninttp
                     Request request;
                     auto requestRes = parseConnection(streamSock);
                     if(!requestRes.has_value()){
-                        std::clog << "[http.server] request error: " << requestRes.error().what << '\n';
-                        continue;
+                        auto error = std::move(requestRes).error();
+                        //TODO: works because type being socket guarantees optional is not empty
+                        if(error.type == NinErrorType::Socket && *(error.socketCategory) == SocketErrorCategory::ConnectionClosed){
+                            continue;
+                        } else if(error.type == NinErrorType::Socket){
+                            return std::unexpected{std::move(error)};
+                        } else{ //httpParseError
+                            assert(error.parseErrorType.has_value());
+
+                            std::clog << "[http.server] request error: " << error.what << '\n';
+
+                            auto errorResponse = internal::httpErrorFactory::fromParseErrorType(*error.parseErrorType, ver);
+                            if(auto sent = streamSock.sendAll(std::span<const char>{errorResponse.data(), errorResponse.size()}); !sent.has_value())
+                                return std::unexpected{NinError::fromSocketError(sent.error())};
+
+                            continue;
+                        }
                     }
 
                     request = std::move(*requestRes);
