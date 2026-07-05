@@ -30,12 +30,12 @@ namespace ninttp::internal{
         TransferEncoding
     };
 
-    struct Header{
-        std::string key;
+    struct HeaderField{
+        std::string name;
         std::string value;
 
-        bool operator==(const Header& other) const noexcept{
-            return key == other.key && value == other.value;
+        bool operator==(const HeaderField& other) const noexcept{
+            return name == other.name && value == other.value;
         }
     };
 } // namespace ninttp::internal
@@ -158,7 +158,7 @@ namespace ninttp
         using key = std::string;
         using value = std::string;
 
-        std::vector<internal::Header> headers;
+        std::vector<internal::HeaderField> headers;
         std::optional<std::string> body;
 
         [[nodiscard]] std::string toString() const{
@@ -178,7 +178,7 @@ namespace ninttp
             responseStr += "\r\n";
 
             for(const auto& header : headers){
-                responseStr += header.key + std::string(": ") + header.value + std::string("\r\n");
+                responseStr += header.name + std::string(": ") + header.value + std::string("\r\n");
             }
 
             responseStr += "\r\n";
@@ -200,7 +200,7 @@ namespace ninttp
            << getReadableStatus(response.statusCode) << '\n';
 
         for(const auto& header : response.headers)
-            os << header.key << ": " << header.value << '\n';
+            os << header.name << ": " << header.value << '\n';
 
         if(response.body.has_value())
             os << '\n' << response.body.value();

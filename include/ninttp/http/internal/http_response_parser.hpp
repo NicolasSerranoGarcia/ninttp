@@ -103,10 +103,10 @@ namespace ninttp::internal
                                     return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
                                                                             .what = "Malformed http packet"}};
 
-                                internal::Header header;
+                                internal::HeaderField header;
 
                                 while(lastProcessedIdx != colon){
-                                    header.key += constructed[lastProcessedIdx];
+                                    header.name += constructed[lastProcessedIdx];
                                     lastProcessedIdx++;
                                 }
 
@@ -126,7 +126,7 @@ namespace ninttp::internal
                             }
 
                             for(const auto& header : response.headers){
-                                if(header.key != std::string("Content-Length"))
+                                if(header.name != std::string("Content-Length"))
                                     continue;
 
                                 try{

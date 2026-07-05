@@ -23,7 +23,9 @@ namespace ninttp::internal
         InvalidLength,
         DuplicatedHeader,
         IncompatibleHeaders, //400 Bad Request,
-        MissingHostHeader
+        MissingHostHeader,
+        DisallowedTokenChar,
+        InvalidHeaderFormat
     };
 
     struct httpParseError{

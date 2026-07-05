@@ -110,8 +110,8 @@ namespace ninttp
                         response.statusCode = 200;
 
                         if(response.body.has_value() && !response.body->empty()){
-                            response.headers.push_back(internal::Header{ .key = std::string("Content-Length"), 
-                                                                         .value = std::to_string(response.body->size())});
+                            response.headers.push_back(internal::HeaderField{ .name = std::string("Content-Length"), 
+                                                                              .value = std::to_string(response.body->size())});
                         }
 
                         auto responseStr = response.toString();

@@ -16,6 +16,8 @@
 #include "http_parse_error.hpp"
 #include "../types.hpp"
 
+//TODO: move all static private utilities to a parse_utilities.hpp header file so that they can be reused in the response parser and leaves bloat off this file
+
 //Possible optimizations: why not make every field of the request a view of the original buffer? Instead of copying parts of the buffer to the return object,
 //we MOVE the constructed buffer to the request, as private member, and make getters or objects return views of the private object
 
@@ -204,11 +206,6 @@ namespace ninttp::internal
                                 if(currentHeaderEnd = constructed.find("\r\n", lastProcessedIdx); currentHeaderEnd == std::string::npos)
                                     return httpParseStatus::NeedData;
 
-                                if(hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
-                                    return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
-                                                                            .what = "encountered preceeding whitespace parsing header " + 
-                                                                                constructed.substr(lastProcessedIdx, currentHeaderEnd - lastProcessedIdx)}};
-
                                 //there are no remaining headers
                                 if(lastProcessedIdx == currentHeaderEnd){
                                     lastProcessedIdx += 2;
@@ -221,15 +218,15 @@ namespace ninttp::internal
                                     return std::unexpected{std::move(header).error()};
 
                                 auto parsedHeader = std::move(header).value();
-                                parsedHeader.key = toLower(std::move(parsedHeader.key));
+                                parsedHeader.name = toLower(std::move(parsedHeader.name));
 
                                 //TODO: normalize standard headers into an enum to avoid string comparisons
-                                if((parsedHeader.key == "content-length" && request.headers.contains("transfer-encoding")) ||
-                                    (parsedHeader.key == "transfer-encoding" && request.headers.contains("content-length")))
+                                if((parsedHeader.name == "content-length" && request.headers.contains("transfer-encoding")) ||
+                                    (parsedHeader.name == "transfer-encoding" && request.headers.contains("content-length")))
                                 {
                                     return std::unexpected{httpParseError{ .type = httpParseErrorType::IncompatibleHeaders, 
                                                                             .what = "Request contains both Content-Length and Transfer-Encoding headers"}};
-                                } else if(parsedHeader.key == "content-length"){
+                                } else if(parsedHeader.name == "content-length"){
                                     const char* first = parsedHeader.value.data();
                                     const char* last = first + parsedHeader.value.size();
                                     auto [ptr, ec] = std::from_chars(first, last, bodySize);
@@ -242,8 +239,8 @@ namespace ninttp::internal
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
                                                                                 .what = "Content-Length field exceeds allowed range"}};
 
-                                    if(request.headers.contains(parsedHeader.key)){
-                                        if(request.headers[parsedHeader.key] != parsedHeader.value)
+                                    if(request.headers.contains(parsedHeader.name)){
+                                        if(request.headers[parsedHeader.name] != parsedHeader.value)
                                             return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader,
                                                                                     .what = "content-length header appears more than once with different values"}};
 
@@ -251,16 +248,16 @@ namespace ninttp::internal
                                     }
                                 }
 
-                                if(parsedHeader.key == "host" && request.headers.contains("host")){
+                                if(parsedHeader.name == "host" && request.headers.contains("host")){
                                     return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader,
                                                                             .what = "host header appears more than once"}};
                                 }
 
-                                if(request.headers.contains(parsedHeader.key)){
-                                    request.headers[parsedHeader.key].append(", ");
-                                    request.headers[parsedHeader.key].append(parsedHeader.value);
+                                if(request.headers.contains(parsedHeader.name)){
+                                    request.headers[parsedHeader.name].append(", ");
+                                    request.headers[parsedHeader.name].append(parsedHeader.value);
                                 } else {
-                                    request.headers[parsedHeader.key] = parsedHeader.value;
+                                    request.headers[parsedHeader.name] = parsedHeader.value;
                                 }
                             }
 
@@ -393,7 +390,7 @@ namespace ninttp::internal
             //dependent upon the state of constructed and lastProcessedIdx. This function just wraps the code that otherwise would be in the Header section of append,
             //so only groups code to make it clearer.
             //also advances lastProcessedIdx to the next header start
-            constexpr std::expected<Header, httpParseError> getHeader(std::string::size_type currentHeaderEnd){
+            constexpr std::expected<HeaderField, httpParseError> getHeader(std::string::size_type currentHeaderEnd){
                 std::string_view headers = std::string_view{constructed};
 
                 auto colon = headers.find(':', lastProcessedIdx);
@@ -403,7 +400,11 @@ namespace ninttp::internal
                     return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
                                                             .what = "Missing colon delimiter for current header"}};
 
-                internal::Header header{ .key = std::string{headers.substr(lastProcessedIdx, colon - lastProcessedIdx)}};
+                internal::HeaderField header{ .name = std::string{headers.substr(lastProcessedIdx, colon - lastProcessedIdx)}};
+
+                if(header.name.empty())
+                    return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidHeaderFormat,
+                                        .what = "Header name contains prohibited chars specified in RFC 9112"}};
 
                 lastProcessedIdx = colon+1;
                 assert(lastProcessedIdx < currentHeaderEnd);
@@ -413,9 +414,25 @@ namespace ninttp::internal
 
                 header.value = headers.substr(lastProcessedIdx, currentHeaderEnd - lastProcessedIdx);
 
+                for(char c : header.name){
+                    if(!isTChar(c))
+                        return std::unexpected{httpParseError{ .type = httpParseErrorType::DisallowedTokenChar,
+                                                                .what = "Header name contains prohibited chars specified in RFC 9112"}};
+                }
+
                 lastProcessedIdx = currentHeaderEnd + 2;
 
                 return std::move(header);
+            }
+
+            static constexpr bool isTChar(char c) noexcept {
+                return (c >= 'A' && c <= 'Z') ||
+                    (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') ||
+                    c == '!' || c == '#' || c == '$' || c == '%' ||
+                    c == '&' || c == '\'' || c == '*' || c == '+' ||
+                    c == '-' || c == '.' || c == '^' || c == '_' ||
+                    c == '`' || c == '|' || c == '~';
             }
 
             std::string constructed;
