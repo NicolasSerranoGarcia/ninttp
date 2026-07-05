@@ -33,7 +33,7 @@ namespace ninttp{
         }
 
         static NinError fromHttpParseError(const internal::httpParseError& err){
-            return NinError{ .type = NinErrorType::Parse, .parseText = err.parseContextText, .what = err.what};
+            return NinError{ .type = NinErrorType::Parse, .parseText = err.parseContextText, .what = err.message()};
         }
     };
 } //namespace ninttp

@@ -48,10 +48,12 @@ namespace ninttp::internal
 
                             if(!ss)
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                        .parseContextText = contextLine(0, lineEnd),
                                                                         .what = "Malformed status line"}};
 
                             if(auto v = httpVersion::fromRequestLineVersion(version); !v.has_value() || v.value().major != ver.major)
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::UnsupportedVersion,
+                                                                        .parseContextText = contextLine(0, lineEnd),
                                                                         .what = std::string("Cannot parse version ") + version +
                                                                             std::string(" with the specified version ") + ver.toString()}};
                             else
@@ -59,6 +61,7 @@ namespace ninttp::internal
 
                             if(response.statusCode < 100 || response.statusCode > 999)
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                        .parseContextText = contextLine(0, lineEnd),
                                                                         .what = std::string("Unrecognized status code: ") + std::to_string(response.statusCode)}};
 
                             lastProcessedIdx = lineEnd;
@@ -101,6 +104,7 @@ namespace ninttp::internal
 
                                 if(colon == std::string::npos)
                                     return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
+                                                                            .parseContextText = contextLine(lastProcessedIdx, lineEnd),
                                                                             .what = "Malformed http packet"}};
 
                                 internal::HeaderField header;
@@ -134,11 +138,13 @@ namespace ninttp::internal
                                 } catch(std::invalid_argument& inv){
                                     return std::unexpected{
                                         httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                        .parseContextText = header.value,
                                                         .what = std::string{"Expected valid Content-Length, given "} + header.value }
                                     };
                                 } catch(std::out_of_range& r){
                                     return std::unexpected{
                                         httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                        .parseContextText = header.value,
                                                         .what = std::string{"Content-Length field exceeds allowed range"} }
                                     };
                                 }
@@ -146,6 +152,7 @@ namespace ninttp::internal
                                 if(bodySize < 0){
                                     return std::unexpected{
                                         httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                        .parseContextText = header.value,
                                                         .what = std::string{"Expected Content-Length field to be non-negative, given "} + header.value }
                                     };
                                 }
@@ -223,6 +230,19 @@ namespace ninttp::internal
                 lastProcessedIdx = -1;
                 bodySize = -1;
                 state = Processing::StatusLine;
+            }
+
+            std::string contextLine(std::string::size_type start, std::string::size_type end) const{
+                if(start == std::string::npos || start >= constructed.size())
+                    return {};
+
+                if(end == std::string::npos || end > constructed.size())
+                    end = constructed.size();
+
+                if(end < start)
+                    return {};
+
+                return constructed.substr(start, end - start);
             }
 
             std::string constructed;

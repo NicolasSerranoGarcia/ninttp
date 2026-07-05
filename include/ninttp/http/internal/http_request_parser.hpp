@@ -53,6 +53,7 @@ namespace ninttp::internal
                         case Processing::RequestLine:{
                             if(constructed.size() > MaxRequestLineLength)
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::RequestLineTooLong,
+                                                                        .parseContextText = contextFrom(lastProcessedIdx == std::string::npos ? 0 : lastProcessedIdx),
                                                                         .what = "Request line exceeds total length allowed by the RFC 9112"}};
 
                             switch(requestLineState){
@@ -61,6 +62,7 @@ namespace ninttp::internal
 
                                     if(hasPrecedingWhitespace(constructed))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                                .parseContextText = contextFrom(0),
                                                                                 .what = "Request line contains preceeding whitespace"}};
 
                                     //SYNC POINT: space delimited between the method and the resource
@@ -69,6 +71,7 @@ namespace ninttp::internal
                                     if(methodResourceSP == std::string::npos){
                                         if(constructed.size() > MaxMethodLength)
                                             return std::unexpected{httpParseError{ .type = httpParseErrorType::MethodTooLong, 
+                                                                                .parseContextText = contextFrom(0),
                                                                                 .what = "Method length exceeds max length possible for a standard method"}};
 
                                         return httpParseStatus::NeedData;
@@ -83,6 +86,7 @@ namespace ninttp::internal
 
                                     if(request.method == httpMethod::INVALID)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                                .parseContextText = std::string(lineMethod),
                                                                                 .what = std::string("Unrecognized method: ") + std::string(lineMethod)}};
 
                                     lastProcessedIdx = methodResourceSP+1;
@@ -94,10 +98,12 @@ namespace ninttp::internal
 
                                     if(hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                                .parseContextText = contextFrom(lastProcessedIdx),
                                                                                 .what = "Request line contains extra whitespace between method and target"}};
 
                                     if(std::string_view{constructed}.substr(lastProcessedIdx).size() > MaxRequestTargetLength)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::TargetTooLong, 
+                                                                            .parseContextText = contextFrom(lastProcessedIdx),
                                                                             .what = "Target length exceeds max length possible for RFC 9112"}};
 
                                     //SYNC POINT: space delimited between the resource and the version
@@ -107,6 +113,7 @@ namespace ninttp::internal
                                     //avoid reporting the need for more data when we find a CRLF but not a SP, as CRLF is reserved only for the request line delimiter
                                     if(requestLineEnd != std::string::npos && (targetVersionSP == std::string::npos || requestLineEnd < targetVersionSP))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
+                                                                                .parseContextText = contextLine(lastProcessedIdx, requestLineEnd),
                                                                                 .what = "Missing space delimiter between target and version"}};
 
 
@@ -131,6 +138,7 @@ namespace ninttp::internal
 
                                     if(hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                                .parseContextText = contextFrom(lastProcessedIdx),
                                                                                 .what = "Request line contains extra whitespace between target and version"}};
 
                                     //SYNC POINT: CRLF delimiting request line
@@ -141,6 +149,7 @@ namespace ninttp::internal
                                     //search until the end of constructed in case we havent found CRLF, if not until CRLF to avoid including parts of header
                                     if(std::string_view{constructed}.substr(lastProcessedIdx, versionLength).size() > HTTPVersionLength)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::VersionTooLong,
+                                                                                .parseContextText = contextFrom(lastProcessedIdx),
                                                                                 .what = "Version length exceeds expected length of 8 bytes (HTTP/X.X)"}};
 
                                     if(requestLineEnd == std::string::npos)
@@ -150,6 +159,7 @@ namespace ninttp::internal
 
                                     if(hasTrailingWhitespace(version))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
+                                                                                .parseContextText = std::string(version),
                                                                                 .what = "Request line contains extra trailing whitespace"}};
 
                                     //about request lines: 
@@ -174,10 +184,12 @@ namespace ninttp::internal
                                     //the version value is malformed from the line itself, no logic involved
                                     if(!v.has_value())
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedVersion, 
+                                                                                .parseContextText = std::string(version),
                                                                                 .what = std::string("Unrecognized version from request line ") + std::string(version)}};
 
                                     if(v.value().major > ver.major)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::UnsupportedVersion, 
+                                                                                .parseContextText = std::string(version),
                                                                                 .what = std::string("Cannot parse request with version ") + std::string(version) + 
                                                                                 std::string(" using the specified parser version ") + ver.toString()}};
 
@@ -225,6 +237,7 @@ namespace ninttp::internal
                                     (parsedHeader.name == "transfer-encoding" && request.headers.contains("content-length")))
                                 {
                                     return std::unexpected{httpParseError{ .type = httpParseErrorType::IncompatibleHeaders, 
+                                                                            .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
                                                                             .what = "Request contains both Content-Length and Transfer-Encoding headers"}};
                                 } else if(parsedHeader.name == "content-length"){
                                     const char* first = parsedHeader.value.data();
@@ -233,15 +246,18 @@ namespace ninttp::internal
 
                                     if(ec == std::errc::invalid_argument || ptr != last)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                                .parseContextText = parsedHeader.value,
                                                                                 .what = std::string("Expected valid Content-Length, given ") + parsedHeader.value}};
 
                                     if(ec == std::errc::result_out_of_range)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                                                .parseContextText = parsedHeader.value,
                                                                                 .what = "Content-Length field exceeds allowed range"}};
 
                                     if(request.headers.contains(parsedHeader.name)){
                                         if(request.headers[parsedHeader.name] != parsedHeader.value)
                                             return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader,
+                                                                                    .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
                                                                                     .what = "content-length header appears more than once with different values"}};
 
                                         continue;
@@ -250,6 +266,7 @@ namespace ninttp::internal
 
                                 if(parsedHeader.name == "host" && request.headers.contains("host")){
                                     return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader,
+                                                                            .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
                                                                             .what = "host header appears more than once"}};
                                 }
 
@@ -263,6 +280,7 @@ namespace ninttp::internal
 
                             if(!request.headers.contains("host"))
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::MissingHostHeader,
+                                                                        .parseContextText = contextFrom(0),
                                                                         .what = "Expected request to contain required host header but did not find it"}};
 
                             if(bodySize == 0){
@@ -398,12 +416,14 @@ namespace ninttp::internal
                 if(colon == std::string::npos)
                     //TODO: use the context atribute for aditional info, giving probably the whole header line
                     return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
+                                                            .parseContextText = contextLine(lastProcessedIdx, currentHeaderEnd),
                                                             .what = "Missing colon delimiter for current header"}};
 
                 internal::HeaderField header{ .name = std::string{headers.substr(lastProcessedIdx, colon - lastProcessedIdx)}};
 
                 if(header.name.empty())
                     return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidHeaderFormat,
+                                        .parseContextText = contextLine(lastProcessedIdx, currentHeaderEnd),
                                         .what = "Header name contains prohibited chars specified in RFC 9112"}};
 
                 lastProcessedIdx = colon+1;
@@ -417,6 +437,7 @@ namespace ninttp::internal
                 for(char c : header.name){
                     if(!isTChar(c))
                         return std::unexpected{httpParseError{ .type = httpParseErrorType::DisallowedTokenChar,
+                                                                .parseContextText = header.name,
                                                                 .what = "Header name contains prohibited chars specified in RFC 9112"}};
                 }
 
@@ -433,6 +454,30 @@ namespace ninttp::internal
                     c == '&' || c == '\'' || c == '*' || c == '+' ||
                     c == '-' || c == '.' || c == '^' || c == '_' ||
                     c == '`' || c == '|' || c == '~';
+            }
+
+            std::string contextFrom(std::string::size_type start) const{
+                if(start == std::string::npos || start >= constructed.size())
+                    return constructed;
+
+                auto end = constructed.find("\r\n", start);
+                if(end == std::string::npos)
+                    end = constructed.size();
+
+                return constructed.substr(start, end - start);
+            }
+
+            std::string contextLine(std::string::size_type start, std::string::size_type end) const{
+                if(start == std::string::npos || start >= constructed.size())
+                    return {};
+
+                if(end == std::string::npos || end > constructed.size())
+                    end = constructed.size();
+
+                if(end < start)
+                    return {};
+
+                return constructed.substr(start, end - start);
             }
 
             std::string constructed;

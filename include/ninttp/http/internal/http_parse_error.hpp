@@ -10,6 +10,7 @@ namespace ninttp::internal
     };
 
     //TODO: map to its http errors
+    //Most parse errors will map to 400 bad Request probably
     enum class httpParseErrorType{
         UnrecognizedToken,
         ExpectedMissingToken,
@@ -25,12 +26,19 @@ namespace ninttp::internal
         IncompatibleHeaders, //400 Bad Request,
         MissingHostHeader,
         DisallowedTokenChar,
-        InvalidHeaderFormat
+        InvalidHeaderFormat //400 probably
     };
 
     struct httpParseError{
         httpParseErrorType type;
-        std::string what;
         std::string parseContextText;
+        std::string what;
+
+        [[nodiscard]] std::string message() const{
+            if(parseContextText.empty())
+                return what;
+
+            return what + std::string{"\nParse context: "} + parseContextText;
+        }
     };
 } // namespace ninttp::internal
