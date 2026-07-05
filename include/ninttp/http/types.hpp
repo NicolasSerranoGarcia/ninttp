@@ -192,21 +192,21 @@ namespace ninttp
             //no move for NRVO
             return responseStr;
         }
+
+        friend inline std::ostream& operator<<(std::ostream& os, const Response& response){
+            os << response.version.toHeaderString() << ' '
+               << response.statusCode << ' '
+               << getReadableStatus(response.statusCode) << '\n';
+
+            for(const auto& header : response.headers)
+                os << header.name << ": " << header.value << '\n';
+
+            if(response.body.has_value())
+                os << '\n' << response.body.value();
+
+            return os;
+        }
     };
-
-    inline std::ostream& operator<<(std::ostream& os, const Response& response){
-        os << response.version.toHeaderString() << ' '
-           << response.statusCode << ' '
-           << getReadableStatus(response.statusCode) << '\n';
-
-        for(const auto& header : response.headers)
-            os << header.name << ": " << header.value << '\n';
-
-        if(response.body.has_value())
-            os << '\n' << response.body.value();
-
-        return os;
-    }
 
     //maybe wire the interfaces to only use this. For example, addHeader and so, then request builder would not be needed semantically
     struct Request{
@@ -227,39 +227,39 @@ namespace ninttp
             headers.clear();
             body.reset();
         }
-    };
 
-    inline std::ostream& operator<<(std::ostream& os, const Request& request){
-        //not use the str array bc this should account for invalid too, which the array does not have
-        switch(request.method){
-            case internal::httpMethod::GET:
-                os << "GET";
-                break;
-            case internal::httpMethod::PUT:
-                os << "PUT";
-                break;
-            case internal::httpMethod::DEL:
-                os << "DELETE";
-                break;
-            case internal::httpMethod::PATCH:
-                os << "PATCH";
-                break;
-            case internal::httpMethod::HEAD:
-                os << "HEAD";
-                break;
-            case internal::httpMethod::INVALID:
-                os << "INVALID";
-                break;
+        friend inline std::ostream& operator<<(std::ostream& os, const Request& request){
+            //not use the str array bc this should account for invalid too, which the array does not have
+            switch(request.method){
+                case internal::httpMethod::GET:
+                    os << "GET";
+                    break;
+                case internal::httpMethod::PUT:
+                    os << "PUT";
+                    break;
+                case internal::httpMethod::DEL:
+                    os << "DELETE";
+                    break;
+                case internal::httpMethod::PATCH:
+                    os << "PATCH";
+                    break;
+                case internal::httpMethod::HEAD:
+                    os << "HEAD";
+                    break;
+                case internal::httpMethod::INVALID:
+                    os << "INVALID";
+                    break;
+            }
+
+            os << ' ' << request.target << '\n';
+
+            for(const auto& header : request.headers)
+                os << header.first << ": " << header.second << '\n';
+
+            if(request.body.has_value())
+                os << '\n' << request.body.value();
+
+            return os;
         }
-
-        os << ' ' << request.target << '\n';
-
-        for(const auto& header : request.headers)
-            os << header.first << ": " << header.second << '\n';
-
-        if(request.body.has_value())
-            os << '\n' << request.body.value();
-
-        return os;
-    }
+    };
 } // namespace ninttp
