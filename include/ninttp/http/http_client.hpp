@@ -43,7 +43,7 @@ namespace ninttp
                 //TODO: move to request builder and research for header architecture
                 //Use string views and spans for interrfaces
                 std::string request = std::string("GET ") + target + std::string(" ") +
-                                    ver.toHeaderString() + std::string("\r\n\r\n");
+                                    ver.toHeaderString() + std::string("\r\n") + std::string("Host: example.com\r\n\r\n");
                 if(auto sent = streamSock_.sendAll(std::span<const char>{request.data(), request.size()}); !sent.has_value())
                     return std::unexpected{NinError::fromSocketError(sent.error())};
 

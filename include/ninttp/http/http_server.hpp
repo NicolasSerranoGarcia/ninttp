@@ -89,7 +89,7 @@ namespace ninttp
 
                             std::clog << "[http.server] request error: " << error.what << '\n';
 
-                            auto errorResponse = internal::httpErrorFactory::fromParseErrorType(*error.parseErrorType, ver);
+                            auto errorResponse = internal::httpErrorFactory<ver>::fromParseErrorType(*error.parseErrorType);
                             if(auto sent = streamSock.sendAll(std::span<const char>{errorResponse.data(), errorResponse.size()}); !sent.has_value())
                                 return std::unexpected{NinError::fromSocketError(sent.error())};
 
@@ -138,7 +138,10 @@ namespace ninttp
                         if(auto sent = streamSock.sendAll(std::span<const char>{responseStr.data(), responseStr.size()}); !sent.has_value())
                             return std::unexpected{NinError::fromSocketError(sent.error())};
                     } else{
-                        //send a 404
+                        auto notfound = internal::httpErrorFactory<ver>::fromStatusCode(404);
+
+                        if(auto sent = streamSock.sendAll(std::span<const char>(notfound.data(), notfound.size())); !sent.has_value())
+                            return std::unexpected{NinError::fromSocketError(sent.error())};
                     }
                 }
 
