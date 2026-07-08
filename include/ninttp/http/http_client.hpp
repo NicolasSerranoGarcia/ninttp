@@ -5,6 +5,7 @@
 #include <concepts>
 #include <expected>
 #include <iostream>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -31,11 +32,31 @@ namespace ninttp
              *
              * @throws NinError with .type = Socket if stream socket construction or connection fails.
              */
-            httpClient(const EndpointT& peer)
+            httpClient(const EndpointT& peer, const std::string& host)
                 : streamSock_(Protocol::Tcp)
             {
                 if(const auto res = streamSock_.connect(peer); !res.has_value())
                     throw NinError::fromSocketError(res.error());
+
+                if(host.empty())
+                    throw std::out_of_range("expected host value parameter to contain a non-empty string");
+
+                if(host.size() > MAXFIELDVALUESIZE)
+                    throw std::out_of_range("Host value exceeds maximum header field length of 256");
+
+                defaultHost = host;
+            }
+
+            std::expected<void, std::out_of_range> setDefaultHost(const std::string& host){
+
+                if(host.empty())
+                    return std::unexpected(std::out_of_range("expected host value parameter to contain a non-empty string"));
+
+                if(host.size() > MAXFIELDVALUESIZE)
+                    return std::unexpected(std::out_of_range("host value exceeds maximum header field length of 256"));
+
+                defaultHost = host;
+                return {};
             }
 
             //TODO: validate target for syntax or disallowed characters
@@ -43,7 +64,7 @@ namespace ninttp
                 //TODO: move to request builder and research for header architecture
                 //Use string views and spans for interrfaces
                 std::string request = std::string("GET ") + target + std::string(" ") +
-                                    ver.toHeaderString() + std::string("\r\n") + std::string("Host: example.com\r\n\r\n");
+                                    ver.toHeaderString() + std::string("\r\n") + std::string("Host: ") + defaultHost + std::string("\r\n\r\n");
                 if(auto sent = streamSock_.sendAll(std::span<const char>{request.data(), request.size()}); !sent.has_value())
                     return std::unexpected{NinError::fromSocketError(sent.error())};
 
@@ -102,5 +123,10 @@ namespace ninttp
 
                 return parser.getResponse();
             }
+
+        private:
+            std::string defaultHost;
+
+            static constexpr const int MAXFIELDVALUESIZE = 256;
     };
 } // namespace ninttp
