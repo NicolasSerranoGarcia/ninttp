@@ -15,6 +15,9 @@
 
 #include "http_parse_error.hpp"
 #include "../types.hpp"
+#include "parse_utils.hpp"
+
+using namespace ninttp::utils;
 
 //TODO: move all static private utilities to a parse_utilities.hpp header file so that they can be reused in the response parser and leaves bloat off this file
 
@@ -379,32 +382,6 @@ namespace ninttp::internal
 
         private:
 
-            constexpr static bool hasPrecedingWhitespace(std::string_view str){
-                return str.starts_with(' ');
-            }
-
-            constexpr static bool hasPrecedingWhitespace(const std::string& str){
-                return str.starts_with(' ');
-            }
-
-            constexpr static bool hasTrailingWhitespace(std::string_view str){
-                return str.ends_with(' ');
-            }
-
-            constexpr static char asciiLower(char c) noexcept{
-                if(c >= 'A' && c <= 'Z')
-                    return static_cast<char>(c + ('a' - 'A'));
-
-                return c;
-            }
-
-            constexpr static std::string toLower(std::string str) noexcept{
-                for(char& c : str)
-                    c = asciiLower(c);
-
-                return str;
-            }
-
             //dependent upon the state of constructed and lastProcessedIdx. This function just wraps the code that otherwise would be in the Header section of append,
             //so only groups code to make it clearer.
             //also advances lastProcessedIdx to the next header start
@@ -444,16 +421,6 @@ namespace ninttp::internal
                 lastProcessedIdx = currentHeaderEnd + 2;
 
                 return std::move(header);
-            }
-
-            static constexpr bool isTChar(char c) noexcept {
-                return (c >= 'A' && c <= 'Z') ||
-                    (c >= 'a' && c <= 'z') ||
-                    (c >= '0' && c <= '9') ||
-                    c == '!' || c == '#' || c == '$' || c == '%' ||
-                    c == '&' || c == '\'' || c == '*' || c == '+' ||
-                    c == '-' || c == '.' || c == '^' || c == '_' ||
-                    c == '`' || c == '|' || c == '~';
             }
 
             std::string contextFrom(std::string::size_type start) const{
