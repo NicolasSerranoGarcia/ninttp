@@ -7,6 +7,8 @@ namespace ninttp::internal{
         public:
             static std::string fromStatusCode(StatusCode code){
                 Response response{ .version = ver, .statusCode = code };
+                //always push back content-length
+                response.headers.push_back(ninttp::internal::HeaderField{.name = "Content-Length", .value = "0"});
                 return response.toString();
             }
 

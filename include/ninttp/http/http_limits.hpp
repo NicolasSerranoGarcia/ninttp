@@ -1,0 +1,6 @@
+
+
+namespace ninttp{
+    
+
+} //namesapce ninttp

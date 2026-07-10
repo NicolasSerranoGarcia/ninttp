@@ -14,6 +14,7 @@
 #include "../socket/socket.hpp"
 #include "../socket/traits.hpp"
 #include "internal/http_response_parser.hpp"
+#include "internal/http_request_builder.hpp"
 #include "types.hpp"
 
 namespace ninttp
@@ -63,9 +64,16 @@ namespace ninttp
             std::expected<Response, NinError> GET(const std::string& target){
                 //TODO: move to request builder and research for header architecture
                 //Use string views and spans for interrfaces
-                std::string request = std::string("GET ") + target + std::string(" ") +
-                                    ver.toHeaderString() + std::string("\r\n") + std::string("Host: ") + defaultHost + std::string("\r\n\r\n");
-                if(auto sent = streamSock_.sendAll(std::span<const char>{request.data(), request.size()}); !sent.has_value())
+                
+                internal::httpRequestBuilder builder;
+
+                builder.setTarget(target);
+                builder.setHost(defaultHost);
+
+                auto& request = builder.get();
+                auto requestStr = request.toString();
+
+                if(auto sent = streamSock_.sendAll(std::span<const char>{requestStr.data(), requestStr.size()}); !sent.has_value())
                     return std::unexpected{NinError::fromSocketError(sent.error())};
 
                 return parseResponse(streamSock_);

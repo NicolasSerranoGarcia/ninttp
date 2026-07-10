@@ -17,12 +17,34 @@ namespace ninttp::internal{
         //the enum which breaks the code. This is the only reliable way I found without braking compatibility.
         PATCH,
         HEAD,
+        OPTION,
+        POST,
+        CONNECT,
+        TRACE,
         INVALID
     };
 
     //only for iterating, this is why INVALID is not included
-    constexpr const std::array<httpMethod, 5> allHttpMethods{httpMethod::GET, httpMethod::PUT, httpMethod::DEL, httpMethod::PATCH, httpMethod::HEAD};
-    constexpr const std::array<std::string_view, 5> allHttpMetodsStr{"GET", "PUT", "DELETE", "PATCH", "HEAD"};
+    constexpr const std::array<httpMethod, 9> allHttpMethods{httpMethod::GET,
+                                                             httpMethod::PUT,
+                                                             httpMethod::DEL,
+                                                             httpMethod::PATCH,
+                                                             httpMethod::HEAD,
+                                                             httpMethod::OPTION,
+                                                             httpMethod::POST,
+                                                             httpMethod::CONNECT,
+                                                             httpMethod::TRACE};
+
+    constexpr const std::array<std::string_view, 10> allHttpMethodsStr{"GET",
+                                                                       "PUT",
+                                                                       "DELETE",
+                                                                       "PATCH",
+                                                                       "HEAD",
+                                                                       "OPTIONS",
+                                                                       "POST",
+                                                                       "CONNECT",
+                                                                       "TRACE",
+                                                                       "INVALID"};
 
     enum class httpHeader{
         ContentLength,
@@ -228,30 +250,33 @@ namespace ninttp
             body.reset();
         }
 
-        friend inline std::ostream& operator<<(std::ostream& os, const Request& request){
-            //not use the str array bc this should account for invalid too, which the array does not have
-            switch(request.method){
-                case internal::httpMethod::GET:
-                    os << "GET";
-                    break;
-                case internal::httpMethod::PUT:
-                    os << "PUT";
-                    break;
-                case internal::httpMethod::DEL:
-                    os << "DELETE";
-                    break;
-                case internal::httpMethod::PATCH:
-                    os << "PATCH";
-                    break;
-                case internal::httpMethod::HEAD:
-                    os << "HEAD";
-                    break;
-                case internal::httpMethod::INVALID:
-                    os << "INVALID";
-                    break;
+        [[nodiscard]] std::string toString() const{
+            std::string requestStr;
+
+            requestStr += internal::allHttpMethodsStr[static_cast<std::size_t>(method)];
+            requestStr += " ";
+            requestStr += target;
+            requestStr += " ";
+            requestStr += version.toHeaderString();
+            requestStr += "\r\n";
+
+            for(const auto& header : headers){
+                requestStr += header.first;
+                requestStr += ": ";
+                requestStr += header.second;
+                requestStr += "\r\n";
             }
 
-            os << ' ' << request.target << '\n';
+            requestStr += "\r\n";
+
+            if(body.has_value())
+                requestStr += body.value();
+
+            return requestStr;
+        }
+
+        friend inline std::ostream& operator<<(std::ostream& os, const Request& request){
+            os << internal::allHttpMethodsStr[static_cast<std::size_t>(request.method)] << ' ' << request.target << '\n';
 
             for(const auto& header : request.headers)
                 os << header.first << ": " << header.second << '\n';

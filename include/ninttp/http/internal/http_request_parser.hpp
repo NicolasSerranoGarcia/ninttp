@@ -83,7 +83,7 @@ namespace ninttp::internal
                                     std::string_view lineMethod = std::string_view{constructed}.substr(0, methodResourceSP);
 
                                     for(const auto m : allHttpMethods){
-                                        if(allHttpMetodsStr[static_cast<const int>(m)] == lineMethod)
+                                        if(allHttpMethodsStr[static_cast<const int>(m)] == lineMethod)
                                             request.method = m;
                                     }
 
