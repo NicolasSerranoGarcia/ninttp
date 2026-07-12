@@ -51,6 +51,10 @@ Main references:
 ### Request routing and targets
 
 - Require and validate the `Host` header for HTTP/1.1 requests.
+  - Parse the authority as a hostname, IPv4 address, or bracketed IPv6 literal, with an optional port.
+  - Reject malformed, empty, and duplicate `Host` fields with `400 Bad Request`.
+  - Normalize hostnames for matching while preserving the received authority when useful for diagnostics.
+  - Define how an explicit default authority interacts with a request made directly to an IP address.
 - Parse all HTTP/1.1 request-target forms:
   - origin-form: `/path?query`;
   - absolute-form for proxy requests;
@@ -58,6 +62,11 @@ Main references:
   - asterisk-form for `OPTIONS *`.
 - Add URI parsing/normalization enough to route safely.
 - Add virtual-host routing support if the server can accept multiple authorities.
+  - Register authorities and associate each one with its own method/target route table.
+  - Route requests by `Host`, then target, then method.
+  - Choose and document the unknown-authority policy: default virtual host, `421 Misdirected Request`, or `404 Not Found`.
+  - Keep Host routing separate from authorization; a client-controlled Host value is not proof of identity.
+  - When TLS is added, validate the relationship between SNI and `Host`.
 
 ### Methods
 
