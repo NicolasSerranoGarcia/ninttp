@@ -62,18 +62,15 @@ namespace ninttp
 
             //TODO: validate target for syntax or disallowed characters
             std::expected<Response, NinError> GET(const std::string& target){
-                //TODO: move to request builder and research for header architecture
-                //Use string views and spans for interrfaces
                 
-                internal::httpRequestBuilder builder;
+                internal::httpRequestBuilder<ver, internal::httpMethod::GET> builder;
 
                 builder.setTarget(target);
                 builder.setHost(defaultHost);
 
-                auto& request = builder.get();
-                auto requestStr = request.toString();
+                auto requestStr = builder.get().toString();
 
-                if(auto sent = streamSock_.sendAll(std::span<const char>{requestStr.data(), requestStr.size()}); !sent.has_value())
+                if(auto sent = streamSock_.sendAll(requestStr); !sent.has_value())
                     return std::unexpected{NinError::fromSocketError(sent.error())};
 
                 return parseResponse(streamSock_);

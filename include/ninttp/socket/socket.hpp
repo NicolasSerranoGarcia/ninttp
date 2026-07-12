@@ -16,6 +16,8 @@
 #include <cstddef>
 #include <expected>
 #include <span>
+#include <string>
+#include <string_view>
 
 #include "internal/select_backend.hpp"
 #include "internal/socket_core.hpp"
@@ -233,6 +235,20 @@ namespace ninttp
                 }
 
                 return {};
+            }
+
+            /**
+             * @brief Sends every character in a string view.
+             *
+             * @param data Characters to send.
+             * @return Empty result on success, or SocketError wrapping the native send error.
+             */
+            [[nodiscard]] std::expected<void, SocketError> sendAll(std::string_view data) noexcept{
+                return sendAll(std::span<const char>{data.data(), data.size()});
+            }
+
+            [[nodiscard]] std::expected<void, SocketError> sendAll(const std::string& data) noexcept{
+                return sendAll(std::string_view{data});
             }
 
             /**

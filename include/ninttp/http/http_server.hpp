@@ -21,7 +21,6 @@
 
 namespace ninttp
 {
-    //1.0
     template<httpVersion ver = http_1_0, typename EndpointT = IPv4Endpoint>
     class httpServer{
         static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
@@ -30,7 +29,7 @@ namespace ninttp
         public:
 
             using GetHandlerT = std::function<void(Response&)>;
-        
+
             /**
              * @brief Construct a server with an opened listener socket.
              *
@@ -90,7 +89,7 @@ namespace ninttp
                             std::clog << "[http.server] request error: " << error.what << '\n';
 
                             auto errorResponse = internal::httpErrorFactory<ver>::fromParseErrorType(*error.parseErrorType);
-                            if(auto sent = streamSock.sendAll(std::span<const char>{errorResponse.data(), errorResponse.size()}); !sent.has_value())
+                            if(auto sent = streamSock.sendAll(errorResponse); !sent.has_value())
                                 return std::unexpected{NinError::fromSocketError(sent.error())};
 
                             continue;
@@ -98,6 +97,14 @@ namespace ninttp
                     }
 
                     request = std::move(*requestRes);
+
+                    //TODO: when you start implementing methods you will need to update this, but as it will return 501 you will notice anyways
+                    if(request.method != internal::httpMethod::GET){
+                        auto unsupported = internal::httpErrorFactory<ver>::fromStatusCode(501);
+
+                        if(auto sent = streamSock.sendAll(unsupported); !sent.has_value())
+                            return std::unexpected{NinError::fromSocketError(sent.error())};
+                    }
 
                     //Depending on the request we might need to modify state, and at the end send the response
 
@@ -135,12 +142,12 @@ namespace ninttp
 
                         //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
                         //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
-                        if(auto sent = streamSock.sendAll(std::span<const char>{responseStr.data(), responseStr.size()}); !sent.has_value())
+                        if(auto sent = streamSock.sendAll(responseStr); !sent.has_value())
                             return std::unexpected{NinError::fromSocketError(sent.error())};
                     } else{
                         auto notfound = internal::httpErrorFactory<ver>::fromStatusCode(404);
 
-                        if(auto sent = streamSock.sendAll(std::span<const char>(notfound.data(), notfound.size())); !sent.has_value())
+                        if(auto sent = streamSock.sendAll(notfound); !sent.has_value())
                             return std::unexpected{NinError::fromSocketError(sent.error())};
                     }
                 }
@@ -158,6 +165,8 @@ namespace ninttp
 
         private:
             //this is only thought for GET. We nee da reliable way to store the callbacks and so because not all methods need the same treatment
+            //instead of a map per method, switch to a method per map entry. for each method, the map stores a set of handlers. Checking if there is a registered
+            //handler for that method and target means indexing into the target and then checking the method exists.
             std::unordered_map<std::string, GetHandlerT> getHandlers;
             ListenerSocket<EndpointT, StreamSocket<EndpointT>> listenerSock_;
 
