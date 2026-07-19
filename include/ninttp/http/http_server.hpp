@@ -9,7 +9,6 @@
 #include <span>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -19,6 +18,7 @@
 #include "../socket/traits.hpp"
 #include "internal/http_request_parser.hpp"
 #include "internal/parse_utils.hpp"
+#include "http_method_config.hpp"
 #include "types.hpp"
 #include "internal/http_error_factory.hpp"
 
@@ -65,11 +65,13 @@ namespace ninttp
                         return false;
                 }
 
+                if(!internal::isSupportedHttpMethod(method))
+                    return false;
+
                 auto hostIt = hosts_.find(host);
                 if(hostIt == hosts_.end())
                     return false;
 
-                registeredMethods_.insert(method);
                 hostIt->second[target].insert_or_assign(std::move(method), std::move(callback));
                 return true;
             }
@@ -138,7 +140,7 @@ namespace ninttp
                         continue;
                     }
 
-                    if(!registeredMethods_.contains(request.method)){
+                    if(!internal::isSupportedHttpMethod(request.method)){
                         if(auto sent = sendStatus(streamSock, 501); !sent.has_value())
                             return std::unexpected{sent.error()};
                         continue;
@@ -214,7 +216,6 @@ namespace ninttp
             }
 
             Hosts hosts_;
-            std::unordered_set<std::string> registeredMethods_;
             ListenerSocket<EndpointT, StreamSocket<EndpointT>> listenerSock_;
 
             std::vector<StreamSocket<EndpointT>> clientSockets_;

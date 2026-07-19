@@ -1,0 +1,12 @@
+#pragma once
+
+#include <array>
+#include <string_view>
+
+#define NINTTP_HTTP_METHOD_CONFIG_GENERATED 1
+
+namespace ninttp::internal{
+    inline constexpr std::array<std::string_view, @NINTTP_CONFIG_HTTP_EXTENSION_METHOD_COUNT@>
+        configuredHttpExtensionMethods{{
+@NINTTP_CONFIG_HTTP_EXTENSION_METHOD_ENTRIES@        }};
+}
