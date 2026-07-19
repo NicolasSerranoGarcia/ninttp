@@ -7,7 +7,11 @@ using namespace ninttp;
 int serverV6(){
     try{
         httpServer<http_1_0, IPv6Endpoint> serverV6;
-        serverV6.doGET("/", [](Response& response){ response.body = std::string("Hello, World!"); });
+        if(!serverV6.registerHost("localhost") ||
+           !serverV6.doGET("localhost", "/", [](Response& response){ response.body = std::string("Hello, World!"); })){
+            std::cerr << "failed to register HTTP route" << std::endl;
+            return 1;
+        }
         if(auto listened = serverV6.listen(IPv6Endpoint::loopback(8080)); !listened.has_value()){
             std::cerr << listened.error().what << std::endl;
             return 1;

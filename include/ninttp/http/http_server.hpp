@@ -6,7 +6,9 @@
 #include <expected>
 #include <functional>
 #include <iostream>
+#include <optional>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -28,7 +30,8 @@ namespace ninttp
 
         public:
 
-            using GetHandlerT = std::function<void(Response&)>;
+            using HandlerT = std::function<void(Response&)>;
+            using GetHandlerT = HandlerT;
 
             /**
              * @brief Construct a server with an opened listener socket.
@@ -39,6 +42,38 @@ namespace ninttp
                 : listenerSock_(Protocol::Tcp) {}
             catch(const SocketError& err) {
                 throw NinError::fromSocketError(err);
+            }
+
+            [[nodiscard]] bool registerHost(std::string host){
+                if(host.empty())
+                    return false;
+
+                return hosts_.try_emplace(std::move(host)).second;
+            }
+
+            [[nodiscard]] bool registerHandler(
+                const std::string& host,
+                const std::string& target,
+                internal::httpMethod method,
+                HandlerT callback)
+            {
+                if(method == internal::httpMethod::INVALID || !callback)
+                    return false;
+
+                auto hostIt = hosts_.find(host);
+                if(hostIt == hosts_.end())
+                    return false;
+
+                hostIt->second[target][methodIndex(method)] = std::move(callback);
+                return true;
+            }
+
+            [[nodiscard]] bool doGET(
+                const std::string& host,
+                const std::string& target,
+                GetHandlerT callback)
+            {
+                return registerHandler(host, target, internal::httpMethod::GET, std::move(callback));
             }
 
             //this signature is correct. the listener socket should only report failure if its own setup went wrong.
@@ -98,58 +133,41 @@ namespace ninttp
 
                     request = std::move(*requestRes);
 
-                    //TODO: when you start implementing methods you will need to update this, but as it will return 501 you will notice anyways
-                    if(request.method != internal::httpMethod::GET){
-                        auto unsupported = internal::httpErrorFactory<ver>::fromStatusCode(501);
-
-                        if(auto sent = streamSock.sendAll(unsupported); !sent.has_value())
-                            return std::unexpected{NinError::fromSocketError(sent.error())};
+                    const auto hostIt = hosts_.find(request.headers.at("host"));
+                    if(hostIt == hosts_.end()){
+                        if(auto sent = sendStatus(streamSock, 421); !sent.has_value())
+                            return std::unexpected{sent.error()};
+                        continue;
                     }
 
-                    //Depending on the request we might need to modify state, and at the end send the response
+                    const auto targetIt = hostIt->second.find(request.target);
+                    if(targetIt == hostIt->second.end()){
+                        if(auto sent = sendStatus(streamSock, 404); !sent.has_value())
+                            return std::unexpected{sent.error()};
+                        continue;
+                    }
 
-                    //we need to send the response. Essentially, we want to do a transformation of the Request into the response.
-                    // The callback, if specified, for the target that Response holds is the transformer of our request into the Response.
-                    //this transformation is specified by the user, that specifies what to do depending on the target.
-                    //the interface should be 
-
-                    //GHLT: we need to set the invariants about how the listener socket works with stream sockets. 
-                    //do we use IPC or other threads when accepting a connection?
+                    //TODO: add preprocessor flags to define compile time extension methods.
+                    auto& handler = targetIt->second[methodIndex(request.method)];
+                    if(!handler.has_value()){
+                        if(auto sent = sendMethodNotAllowed(streamSock, targetIt->second); !sent.has_value())
+                            return std::unexpected{sent.error()};
+                        continue;
+                    }
 
                     Response response;
+                    (*handler)(response);
 
-                    //use contains bc we dont want to create the target
-                    //GHLT: this probably also triggers 404 or other depending on permissions
-                    //the error message shall be returned to the client
-                    if(getHandlers.contains(request.target)){
+                    response.version = ver;
+                    response.statusCode = 200;
 
-                        //TODO allow only a handful of operations over the response object. For example, setting the contents,
-                        //setting a header maybe? and so. The rest is constructed by the response builder
-                        //this would be implemented by making the contents of response private, maybe friending the builders
-                        //and creating two methods like setContent and setHeader(). For the moment the most reasonable is letting only 
-                        //setContent because set headers might have many side effects and I don't know if it would be useful for the user
-                        getHandlers[request.target](response);
-
-                        response.version = ver;
-                        response.statusCode = 200;
-
-                        if(response.body.has_value() && !response.body->empty()){
-                            response.headers.push_back(internal::HeaderField{ .name = std::string("Content-Length"), 
-                                                                              .value = std::to_string(response.body->size())});
-                        }
-
-                        auto responseStr = response.toString();
-
-                        //technically we are not finished with just one response. Even in 1.0 client can specify keepalive.
-                        //we could use fork? threads? the thing is that we need to streams of execution from the point we create a stream socket.
-                        if(auto sent = streamSock.sendAll(responseStr); !sent.has_value())
-                            return std::unexpected{NinError::fromSocketError(sent.error())};
-                    } else{
-                        auto notfound = internal::httpErrorFactory<ver>::fromStatusCode(404);
-
-                        if(auto sent = streamSock.sendAll(notfound); !sent.has_value())
-                            return std::unexpected{NinError::fromSocketError(sent.error())};
+                    if(response.body.has_value() && !response.body->empty()){
+                        response.headers.push_back(internal::HeaderField{ .name = std::string("Content-Length"),
+                                                                          .value = std::to_string(response.body->size())});
                     }
+
+                    if(auto sent = streamSock.sendAll(response.toString()); !sent.has_value())
+                        return std::unexpected{NinError::fromSocketError(sent.error())};
                 }
 
                 std::clog << "[http.server] listen loop exited\n";
@@ -158,16 +176,49 @@ namespace ninttp
                 return {};
             }
 
-            void doGET(const std::string& target, GetHandlerT callback){
-                /*TODO: validate target is not malicious and so*/
-                getHandlers[target] = callback;
+        private:
+            static constexpr std::size_t MethodCount = internal::allHttpMethods.size();
+            using MethodHandlers = std::array<std::optional<HandlerT>, MethodCount>;
+            using Targets = std::unordered_map<std::string, MethodHandlers>;
+            using Hosts = std::unordered_map<std::string, Targets>;
+
+            [[nodiscard]] static constexpr std::size_t methodIndex(internal::httpMethod method) noexcept{
+                return static_cast<std::size_t>(method);
             }
 
-        private:
-            //this is only thought for GET. We nee da reliable way to store the callbacks and so because not all methods need the same treatment
-            //instead of a map per method, switch to a method per map entry. for each method, the map stores a set of handlers. Checking if there is a registered
-            //handler for that method and target means indexing into the target and then checking the method exists.
-            std::unordered_map<std::string, GetHandlerT> getHandlers;
+            std::expected<void, NinError> sendStatus(StreamSocket<EndpointT>& socket, StatusCode status){
+                auto response = internal::httpErrorFactory<ver>::fromStatusCode(status);
+                if(auto sent = socket.sendAll(response); !sent.has_value())
+                    return std::unexpected{NinError::fromSocketError(sent.error())};
+
+                return {};
+            }
+
+            std::expected<void, NinError> sendMethodNotAllowed(
+                StreamSocket<EndpointT>& socket,
+                const MethodHandlers& handlers)
+            {
+                Response response{ .version = ver, .statusCode = 405 };
+                response.headers.push_back(internal::HeaderField{ .name = "Content-Length", .value = "0" });
+
+                std::string allowed;
+                for(const auto method : internal::allHttpMethods){
+                    if(!handlers[methodIndex(method)].has_value())
+                        continue;
+
+                    if(!allowed.empty())
+                        allowed += ", ";
+                    allowed += internal::allHttpMethodsStr[methodIndex(method)];
+                }
+                response.headers.push_back(internal::HeaderField{ .name = "Allow", .value = std::move(allowed) });
+
+                if(auto sent = socket.sendAll(response.toString()); !sent.has_value())
+                    return std::unexpected{NinError::fromSocketError(sent.error())};
+
+                return {};
+            }
+
+            Hosts hosts_;
             ListenerSocket<EndpointT, StreamSocket<EndpointT>> listenerSock_;
 
             std::vector<StreamSocket<EndpointT>> clientSockets_;
