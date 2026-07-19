@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <cstddef>
 #include <optional>
 #include <ostream>
@@ -10,42 +9,6 @@
 #include <vector>
 
 namespace ninttp::internal{
-    enum class httpMethod{
-        GET,
-        PUT,
-        DEL, // windows defines a macro with the name DELETE. If we name this DELETE the compiler expands the macro before processing
-        //the enum which breaks the code. This is the only reliable way I found without braking compatibility.
-        PATCH,
-        HEAD,
-        OPTION,
-        POST,
-        CONNECT,
-        TRACE,
-        INVALID
-    };
-
-    //only for iterating, this is why INVALID is not included
-    constexpr const std::array<httpMethod, 9> allHttpMethods{httpMethod::GET,
-                                                             httpMethod::PUT,
-                                                             httpMethod::DEL,
-                                                             httpMethod::PATCH,
-                                                             httpMethod::HEAD,
-                                                             httpMethod::OPTION,
-                                                             httpMethod::POST,
-                                                             httpMethod::CONNECT,
-                                                             httpMethod::TRACE};
-
-    constexpr const std::array<std::string_view, 10> allHttpMethodsStr{"GET",
-                                                                       "PUT",
-                                                                       "DELETE",
-                                                                       "PATCH",
-                                                                       "HEAD",
-                                                                       "OPTIONS",
-                                                                       "POST",
-                                                                       "CONNECT",
-                                                                       "TRACE",
-                                                                       "INVALID"};
-
     enum class httpHeader{
         ContentLength,
         Host,
@@ -232,7 +195,7 @@ namespace ninttp
 
     //maybe wire the interfaces to only use this. For example, addHeader and so, then request builder would not be needed semantically
     struct Request{
-        internal::httpMethod method = internal::httpMethod::INVALID;
+        std::string method;
         std::string target;
         httpVersion version;
 
@@ -243,7 +206,7 @@ namespace ninttp
         std::optional<std::string> body;
 
         void reset(){
-            method = internal::httpMethod::INVALID;
+            method.clear();
             target.clear();
             version = http_1_0;
             headers.clear();
@@ -253,7 +216,7 @@ namespace ninttp
         [[nodiscard]] std::string toString() const{
             std::string requestStr;
 
-            requestStr += internal::allHttpMethodsStr[static_cast<std::size_t>(method)];
+            requestStr += method;
             requestStr += " ";
             requestStr += target;
             requestStr += " ";
@@ -276,7 +239,7 @@ namespace ninttp
         }
 
         friend inline std::ostream& operator<<(std::ostream& os, const Request& request){
-            os << internal::allHttpMethodsStr[static_cast<std::size_t>(request.method)] << ' ' << request.target << '\n';
+            os << request.method << ' ' << request.target << '\n';
 
             for(const auto& header : request.headers)
                 os << header.first << ": " << header.second << '\n';

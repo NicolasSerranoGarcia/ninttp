@@ -6,10 +6,10 @@
 #include <expected>
 #include <functional>
 #include <iostream>
-#include <optional>
 #include <span>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -18,6 +18,7 @@
 #include "../socket/socket.hpp"
 #include "../socket/traits.hpp"
 #include "internal/http_request_parser.hpp"
+#include "internal/parse_utils.hpp"
 #include "types.hpp"
 #include "internal/http_error_factory.hpp"
 
@@ -31,7 +32,6 @@ namespace ninttp
         public:
 
             using HandlerT = std::function<void(Response&)>;
-            using GetHandlerT = HandlerT;
 
             /**
              * @brief Construct a server with an opened listener socket.
@@ -54,26 +54,24 @@ namespace ninttp
             [[nodiscard]] bool registerHandler(
                 const std::string& host,
                 const std::string& target,
-                internal::httpMethod method,
+                std::string method,
                 HandlerT callback)
             {
-                if(method == internal::httpMethod::INVALID || !callback)
+                if(method.empty() || !callback)
                     return false;
+
+                for(const char c : method){
+                    if(!utils::isTChar(c))
+                        return false;
+                }
 
                 auto hostIt = hosts_.find(host);
                 if(hostIt == hosts_.end())
                     return false;
 
-                hostIt->second[target][methodIndex(method)] = std::move(callback);
+                registeredMethods_.insert(method);
+                hostIt->second[target].insert_or_assign(std::move(method), std::move(callback));
                 return true;
-            }
-
-            [[nodiscard]] bool doGET(
-                const std::string& host,
-                const std::string& target,
-                GetHandlerT callback)
-            {
-                return registerHandler(host, target, internal::httpMethod::GET, std::move(callback));
             }
 
             //this signature is correct. the listener socket should only report failure if its own setup went wrong.
@@ -140,6 +138,12 @@ namespace ninttp
                         continue;
                     }
 
+                    if(!registeredMethods_.contains(request.method)){
+                        if(auto sent = sendStatus(streamSock, 501); !sent.has_value())
+                            return std::unexpected{sent.error()};
+                        continue;
+                    }
+
                     const auto targetIt = hostIt->second.find(request.target);
                     if(targetIt == hostIt->second.end()){
                         if(auto sent = sendStatus(streamSock, 404); !sent.has_value())
@@ -147,16 +151,15 @@ namespace ninttp
                         continue;
                     }
 
-                    //TODO: add preprocessor flags to define compile time extension methods.
-                    auto& handler = targetIt->second[methodIndex(request.method)];
-                    if(!handler.has_value()){
+                    const auto handlerIt = targetIt->second.find(request.method);
+                    if(handlerIt == targetIt->second.end()){
                         if(auto sent = sendMethodNotAllowed(streamSock, targetIt->second); !sent.has_value())
                             return std::unexpected{sent.error()};
                         continue;
                     }
 
                     Response response;
-                    (*handler)(response);
+                    handlerIt->second(response);
 
                     response.version = ver;
                     response.statusCode = 200;
@@ -177,14 +180,9 @@ namespace ninttp
             }
 
         private:
-            static constexpr std::size_t MethodCount = internal::allHttpMethods.size();
-            using MethodHandlers = std::array<std::optional<HandlerT>, MethodCount>;
+            using MethodHandlers = std::unordered_map<std::string, HandlerT>;
             using Targets = std::unordered_map<std::string, MethodHandlers>;
             using Hosts = std::unordered_map<std::string, Targets>;
-
-            [[nodiscard]] static constexpr std::size_t methodIndex(internal::httpMethod method) noexcept{
-                return static_cast<std::size_t>(method);
-            }
 
             std::expected<void, NinError> sendStatus(StreamSocket<EndpointT>& socket, StatusCode status){
                 auto response = internal::httpErrorFactory<ver>::fromStatusCode(status);
@@ -202,13 +200,10 @@ namespace ninttp
                 response.headers.push_back(internal::HeaderField{ .name = "Content-Length", .value = "0" });
 
                 std::string allowed;
-                for(const auto method : internal::allHttpMethods){
-                    if(!handlers[methodIndex(method)].has_value())
-                        continue;
-
+                for(const auto& [method, handler] : handlers){
                     if(!allowed.empty())
                         allowed += ", ";
-                    allowed += internal::allHttpMethodsStr[methodIndex(method)];
+                    allowed += method;
                 }
                 response.headers.push_back(internal::HeaderField{ .name = "Allow", .value = std::move(allowed) });
 
@@ -219,6 +214,7 @@ namespace ninttp
             }
 
             Hosts hosts_;
+            std::unordered_set<std::string> registeredMethods_;
             ListenerSocket<EndpointT, StreamSocket<EndpointT>> listenerSock_;
 
             std::vector<StreamSocket<EndpointT>> clientSockets_;

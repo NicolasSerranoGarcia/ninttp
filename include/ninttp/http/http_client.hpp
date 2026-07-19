@@ -63,7 +63,7 @@ namespace ninttp
             //TODO: validate target for syntax or disallowed characters
             std::expected<Response, NinError> GET(const std::string& target){
                 
-                internal::httpRequestBuilder<ver, internal::httpMethod::GET> builder;
+                internal::httpRequestBuilder<ver> builder{"GET"};
 
                 builder.setTarget(target);
                 builder.setHost(defaultHost);

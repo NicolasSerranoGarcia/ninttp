@@ -79,7 +79,6 @@ Main references:
   - `CONNECT`;
   - `OPTIONS`;
   - `TRACE`.
-- Support extension methods as valid HTTP tokens instead of treating methods as a closed enum only.
 - Implement automatic method semantics where the library owns behavior:
   - `HEAD` sends headers only;
   - `OPTIONS *` works;

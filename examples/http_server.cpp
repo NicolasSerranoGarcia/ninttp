@@ -8,7 +8,7 @@ int server(){
     try{
         httpServer server;
         if(!server.registerHost("localhost") ||
-           !server.doGET("localhost", "/", [](Response& response){ response.body = std::string("Hello, World!"); })){
+           !server.registerHandler("localhost", "/", "GET", [](Response& response){ response.body = std::string("Hello, World!"); })){
             std::cerr << "failed to register HTTP route" << std::endl;
             return 1;
         }

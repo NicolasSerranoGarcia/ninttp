@@ -75,22 +75,26 @@ namespace ninttp::internal
                                         if(constructed.size() > MaxMethodLength)
                                             return std::unexpected{httpParseError{ .type = httpParseErrorType::MethodTooLong, 
                                                                                 .parseContextText = contextFrom(0),
-                                                                                .what = "Method length exceeds max length possible for a standard method"}};
+                                                                                .what = "Method token exceeds the configured maximum length"}};
 
                                         return httpParseStatus::NeedData;
                                     }
 
                                     std::string_view lineMethod = std::string_view{constructed}.substr(0, methodResourceSP);
 
-                                    for(const auto m : allHttpMethods){
-                                        if(allHttpMethodsStr[static_cast<const int>(m)] == lineMethod)
-                                            request.method = m;
+                                    if(lineMethod.size() > MaxMethodLength)
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::MethodTooLong,
+                                                                                .parseContextText = std::string(lineMethod),
+                                                                                .what = "Method token exceeds the configured maximum length"}};
+
+                                    for(const char c : lineMethod){
+                                        if(!isTChar(c))
+                                            return std::unexpected{httpParseError{ .type = httpParseErrorType::DisallowedTokenChar,
+                                                                                    .parseContextText = std::string(lineMethod),
+                                                                                    .what = "Method contains a character not allowed in an HTTP token"}};
                                     }
 
-                                    if(request.method == httpMethod::INVALID)
-                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
-                                                                                .parseContextText = std::string(lineMethod),
-                                                                                .what = std::string("Unrecognized method: ") + std::string(lineMethod)}};
+                                    request.method = lineMethod;
 
                                     lastProcessedIdx = methodResourceSP+1;
                                     requestLineState = RequestLineProcessing::Target;
@@ -213,7 +217,7 @@ namespace ninttp::internal
                         } // case Processing::RequestLine
 
                         case Processing::Headers:{
-                            assert(request.method != httpMethod::INVALID);
+                            assert(!request.method.empty());
                             size_t currentHeaderEnd;
 
                             while(1){
