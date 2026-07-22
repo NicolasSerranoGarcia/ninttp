@@ -41,7 +41,8 @@ server.registerHandler(
     "localhost",
     "/cache",
     "PURGE",
-    [](ninttp::Response& response) {
+    [](const ninttp::Request& request, ninttp::Response& response) {
+        (void)request;
         response.body = "cache cleared";
     });
 ```

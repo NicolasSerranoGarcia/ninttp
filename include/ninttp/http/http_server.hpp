@@ -31,7 +31,7 @@ namespace ninttp
 
         public:
 
-            using HandlerT = std::function<void(Response&)>;
+            using HandlerT = std::function<void(const Request&, Response&)>;
 
             /**
              * @brief Construct a server with an opened listener socket.
@@ -98,7 +98,6 @@ namespace ninttp
 
                     // }
 
-                    //GHLT: at the very least the append method does parse the entirety of a request packet
                     internal::httpRequestParser parser;
 
                     auto acceptRes = listenerSock_.accept();
@@ -160,8 +159,12 @@ namespace ninttp
                         continue;
                     }
 
+                    //TODO: make the response and request a proxy object for the user, so that he cant change things like the version or the status code for responses.
+                    //We could do this by making the response atributes private and user functions public, but that would mean that every class that needs sudo access to
+                    //the object needs to be friended, which can be ugly. What about we use a second class that is only thought for user interface, and then only friend that with
+                    //the server side response object? we have a converter, zero copy, and once we have the server side object we function as normal
                     Response response;
-                    handlerIt->second(response);
+                    handlerIt->second(request, response);
 
                     response.version = ver;
                     response.statusCode = 200;
