@@ -21,6 +21,7 @@
 #include "http_method_config.hpp"
 #include "types.hpp"
 #include "internal/http_error_factory.hpp"
+#include "internal/http_router.hpp"
 
 namespace ninttp
 {
@@ -45,10 +46,7 @@ namespace ninttp
             }
 
             [[nodiscard]] bool registerHost(std::string host){
-                if(host.empty())
-                    return false;
-
-                return hosts_.try_emplace(std::move(host)).second;
+                return router_.registerHost(std::move(host));
             }
 
             [[nodiscard]] bool registerHandler(
@@ -57,23 +55,7 @@ namespace ninttp
                 std::string method,
                 HandlerT callback)
             {
-                if(method.empty() || !callback)
-                    return false;
-
-                for(const char c : method){
-                    if(!utils::isTChar(c))
-                        return false;
-                }
-
-                if(!internal::isSupportedHttpMethod(method))
-                    return false;
-
-                auto hostIt = hosts_.find(host);
-                if(hostIt == hosts_.end())
-                    return false;
-
-                hostIt->second[target].insert_or_assign(std::move(method), std::move(callback));
-                return true;
+                return router_.registerHandler(host, target, std::move(method), std::move(callback));
             }
 
             //this signature is correct. the listener socket should only report failure if its own setup went wrong.
@@ -132,30 +114,15 @@ namespace ninttp
 
                     request = std::move(*requestRes);
 
-                    const auto hostIt = hosts_.find(request.headers.at("host"));
-                    if(hostIt == hosts_.end()){
-                        if(auto sent = sendStatus(streamSock, 421); !sent.has_value())
-                            return std::unexpected{sent.error()};
-                        continue;
-                    }
+                    auto result = router_.handleRequest(request);
 
-                    if(!internal::isSupportedHttpMethod(request.method)){
-                        if(auto sent = sendStatus(streamSock, 501); !sent.has_value())
+                    if(!result){
+                        if(result.error() == 405){
+                            if(auto sent = sendMethodNotAllowed(streamSock, router_.getAllowedMethods(request)); !sent.has_value())
+                                return std::unexpected{sent.error()};
+                        } else if(auto sent = sendStatus(streamSock, result.error()); !sent.has_value()){
                             return std::unexpected{sent.error()};
-                        continue;
-                    }
-
-                    const auto targetIt = hostIt->second.find(request.target);
-                    if(targetIt == hostIt->second.end()){
-                        if(auto sent = sendStatus(streamSock, 404); !sent.has_value())
-                            return std::unexpected{sent.error()};
-                        continue;
-                    }
-
-                    const auto handlerIt = targetIt->second.find(request.method);
-                    if(handlerIt == targetIt->second.end()){
-                        if(auto sent = sendMethodNotAllowed(streamSock, targetIt->second); !sent.has_value())
-                            return std::unexpected{sent.error()};
+                        }
                         continue;
                     }
 
@@ -164,7 +131,7 @@ namespace ninttp
                     //the object needs to be friended, which can be ugly. What about we use a second class that is only thought for user interface, and then only friend that with
                     //the server side response object? we have a converter, zero copy, and once we have the server side object we function as normal
                     Response response;
-                    handlerIt->second(request, response);
+                    result->get()(request, response);
 
                     response.version = ver;
                     response.statusCode = 200;
@@ -185,10 +152,6 @@ namespace ninttp
             }
 
         private:
-            using MethodHandlers = std::unordered_map<std::string, HandlerT>;
-            using Targets = std::unordered_map<std::string, MethodHandlers>;
-            using Hosts = std::unordered_map<std::string, Targets>;
-
             std::expected<void, NinError> sendStatus(StreamSocket<EndpointT>& socket, StatusCode status){
                 auto response = internal::httpErrorFactory<ver>::fromStatusCode(status);
                 if(auto sent = socket.sendAll(response); !sent.has_value())
@@ -199,18 +162,11 @@ namespace ninttp
 
             std::expected<void, NinError> sendMethodNotAllowed(
                 StreamSocket<EndpointT>& socket,
-                const MethodHandlers& handlers)
+                std::string allowedMethods)
             {
                 Response response{ .version = ver, .statusCode = 405 };
                 response.headers.push_back(internal::HeaderField{ .name = "Content-Length", .value = "0" });
-
-                std::string allowed;
-                for(const auto& [method, handler] : handlers){
-                    if(!allowed.empty())
-                        allowed += ", ";
-                    allowed += method;
-                }
-                response.headers.push_back(internal::HeaderField{ .name = "Allow", .value = std::move(allowed) });
+                response.headers.push_back(internal::HeaderField{ .name = "Allow", .value = std::move(allowedMethods) });
 
                 if(auto sent = socket.sendAll(response.toString()); !sent.has_value())
                     return std::unexpected{NinError::fromSocketError(sent.error())};
@@ -218,8 +174,9 @@ namespace ninttp
                 return {};
             }
 
-            Hosts hosts_;
             ListenerSocket<EndpointT, StreamSocket<EndpointT>> listenerSock_;
+
+            internal::httpRouter<ver> router_;
 
             std::vector<StreamSocket<EndpointT>> clientSockets_;
 

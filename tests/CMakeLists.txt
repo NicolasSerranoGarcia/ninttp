@@ -14,6 +14,10 @@ add_executable(ninttp_http_method_config_tests
     http_method_config_tests.cpp
 )
 
+add_executable(ninttp_http_router_tests
+    http_router_tests.cpp
+)
+
 target_link_libraries(ninttp_ninendian_tests
     PRIVATE
         ninttp::ninttp
@@ -30,6 +34,11 @@ target_link_libraries(ninttp_endpoints_invariant_tests
 )
 
 target_link_libraries(ninttp_http_method_config_tests
+    PRIVATE
+        ninttp::ninttp
+)
+
+target_link_libraries(ninttp_http_router_tests
     PRIVATE
         ninttp::ninttp
 )
@@ -52,4 +61,9 @@ add_test(
 add_test(
     NAME ninttp.http.methods.config
     COMMAND ninttp_http_method_config_tests
+)
+
+add_test(
+    NAME ninttp.http.router
+    COMMAND ninttp_http_router_tests
 )

@@ -70,6 +70,7 @@ set(public_headers
     include/ninttp/http/types.hpp
     include/ninttp/http/internal/http_request_parser.hpp
     include/ninttp/http/internal/http_response_parser.hpp
+    include/ninttp/http/internal/http_router.hpp
 )
 
 # groups have to match the location in which they are
