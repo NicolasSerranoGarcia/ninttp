@@ -5,7 +5,7 @@
 
 namespace ninttp::utils{
     constexpr static bool hasPrecedingWhitespace(std::string_view str){
-    return str.starts_with(' ');
+        return str.starts_with(' ');
     }
 
     constexpr static bool hasPrecedingWhitespace(const std::string& str){
@@ -39,4 +39,4 @@ namespace ninttp::utils{
             c == '-' || c == '.' || c == '^' || c == '_' ||
             c == '`' || c == '|' || c == '~';
     }
-}
+} // namespace ninttp::utils

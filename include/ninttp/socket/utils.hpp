@@ -15,7 +15,7 @@
 
 #include "../platform_traits.hpp"
 
-namespace ninttp
+namespace ninttp::utils
 {
     /**
      * @brief Converts a 16-bit integer from host byte order to network byte order.
@@ -78,4 +78,4 @@ namespace ninttp
             return value;
         #endif
     }
-} // namespace ninttp
+} // namespace ninttp::utils

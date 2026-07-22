@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -9,12 +9,6 @@
 #include <vector>
 
 namespace ninttp::internal{
-    enum class httpHeader{
-        ContentLength,
-        Host,
-        TransferEncoding
-    };
-
     struct HeaderField{
         std::string name;
         std::string value;
@@ -47,7 +41,7 @@ namespace ninttp
             return std::nullopt;
         }
 
-        constexpr httpVersion(uint8_t major, uint8_t minor) noexcept
+        constexpr httpVersion(std::uint8_t major, std::uint8_t minor) noexcept
             : major(major), minor(minor){}
 
         std::string toString() const noexcept{
@@ -59,15 +53,14 @@ namespace ninttp
         }
 
         httpVersion() noexcept = default;
-        uint8_t major;
-        uint8_t minor;
+        std::uint8_t major;
+        std::uint8_t minor;
     };
 
     constexpr const httpVersion http_1_0(1,0);
     constexpr const httpVersion http_1_1(1,1);
 
-    //maybe change name or put it as a method inside a statusCode struct with implicit conversions to int
-    using StatusCode = int;
+    using StatusCode = std::uint16_t;
     [[nodiscard]] constexpr std::string_view getReadableStatus(StatusCode code) noexcept{
         switch(code){
             case 100: return "Continue";

@@ -3,12 +3,11 @@
 #include <array>
 #include <cassert>
 #include <concepts>
+#include <cstddef>
 #include <expected>
 #include <functional>
 #include <iostream>
-#include <span>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -16,12 +15,10 @@
 #include "../error/nin_error.hpp"
 #include "../socket/socket.hpp"
 #include "../socket/traits.hpp"
-#include "internal/http_request_parser.hpp"
-#include "internal/parse_utils.hpp"
-#include "http_method_config.hpp"
-#include "types.hpp"
 #include "internal/http_error_factory.hpp"
+#include "internal/http_request_parser.hpp"
 #include "internal/http_router.hpp"
+#include "types.hpp"
 
 namespace ninttp
 {
@@ -66,7 +63,7 @@ namespace ninttp
                 if(auto listenRes = listenerSock_.listen(MAX_BACKLOG); !listenRes.has_value())
                     return std::unexpected{NinError::fromSocketError(listenRes.error())};
 
-                while(1){
+                while(true){
 
                     //parse saved sockets from previous clients before trying to accept
                     // for(auto& s : clientSockets_){
@@ -79,8 +76,6 @@ namespace ninttp
                     //     //at the moment we will just receive some
 
                     // }
-
-                    internal::httpRequestParser parser;
 
                     auto acceptRes = listenerSock_.accept();
                     if(!acceptRes.has_value())
@@ -180,7 +175,7 @@ namespace ninttp
 
             std::vector<StreamSocket<EndpointT>> clientSockets_;
 
-            static constinit const int MAX_BACKLOG = 100;
+            static constexpr int MAX_BACKLOG = 100;
 
             std::expected<Request, NinError> parseConnection(StreamSocket<EndpointT>& sock){
                 internal::httpRequestParser parser;
@@ -203,7 +198,7 @@ namespace ninttp
                         return std::unexpected{NinError::fromSocketError(err)};
                     }
 
-                    size_t read = res.value();
+                    std::size_t read = res.value();
 
                     if(read == 0){
                         std::clog << "[http.server] sender sent 0\n";

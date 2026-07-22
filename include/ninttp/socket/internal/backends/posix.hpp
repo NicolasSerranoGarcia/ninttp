@@ -348,8 +348,8 @@ namespace ninttp::internal
             static AddressStorageT toStorage(const ninttp::IPv4Endpoint& endpoint) noexcept{
                 sockaddr_in native{};
                 native.sin_family = AF_INET;
-                native.sin_addr.s_addr = ninttp::hostToNetwork32(endpoint.addressHostOrder());
-                native.sin_port = ninttp::hostToNetwork16(endpoint.portHostOrder());
+                native.sin_addr.s_addr = ninttp::utils::hostToNetwork32(endpoint.addressHostOrder());
+                native.sin_port = ninttp::utils::hostToNetwork16(endpoint.portHostOrder());
 
                 AddressStorageT storage{};
                 std::memcpy(&storage, &native, sizeof(native));
@@ -366,7 +366,7 @@ namespace ninttp::internal
             static AddressStorageT toStorage(const ninttp::IPv6Endpoint& endpoint) noexcept{
                 sockaddr_in6 native{};
                 native.sin6_family = AF_INET6;
-                native.sin6_port = ninttp::hostToNetwork16(endpoint.portHostOrder());
+                native.sin6_port = ninttp::utils::hostToNetwork16(endpoint.portHostOrder());
 
                 const auto bytes = endpoint.addressBytes();
                 std::memcpy(&native.sin6_addr.s6_addr, bytes.data(), bytes.size());
@@ -401,8 +401,8 @@ namespace ninttp::internal
                     sockaddr_in native{};
                     std::memcpy(&native, &storage, sizeof(native));
                     return ninttp::IPv4Endpoint(
-                        ninttp::networkToHost32(native.sin_addr.s_addr),
-                        ninttp::networkToHost16(native.sin_port));
+                        ninttp::utils::networkToHost32(native.sin_addr.s_addr),
+                        ninttp::utils::networkToHost16(native.sin_port));
                 }else if constexpr(std::same_as<EndpointT, ninttp::IPv6Endpoint>){
                     if(storage.ss_family != AF_INET6)
                         return std::unexpected{EAFNOSUPPORT};
@@ -414,7 +414,7 @@ namespace ninttp::internal
                     std::memcpy(bytes.data(), &native.sin6_addr.s6_addr, bytes.size());
                     return ninttp::IPv6Endpoint(
                         bytes,
-                        ninttp::networkToHost16(native.sin6_port));
+                        ninttp::utils::networkToHost16(native.sin6_port));
                 }else{
                     static_assert(std::same_as<EndpointT, ninttp::IPv4Endpoint>
                         || std::same_as<EndpointT, ninttp::IPv6Endpoint>, "Unsupported endpoint type");
@@ -441,8 +441,8 @@ namespace ninttp::internal
                     sockaddr_in native{};
                     std::memcpy(&native, &storage, sizeof(native));
                     return ninttp::IPv4Endpoint(
-                        ninttp::networkToHost32(native.sin_addr.s_addr),
-                        ninttp::networkToHost16(native.sin_port));
+                        ninttp::utils::networkToHost32(native.sin_addr.s_addr),
+                        ninttp::utils::networkToHost16(native.sin_port));
                 }else if constexpr(std::same_as<EndpointT, ninttp::IPv6Endpoint>){
                     assert(storage.ss_family == AF_INET6);
 
@@ -453,7 +453,7 @@ namespace ninttp::internal
                     std::memcpy(bytes.data(), &native.sin6_addr.s6_addr, bytes.size());
                     return ninttp::IPv6Endpoint(
                         bytes,
-                        ninttp::networkToHost16(native.sin6_port));
+                        ninttp::utils::networkToHost16(native.sin6_port));
                 }else{
                     static_assert(std::same_as<EndpointT, ninttp::IPv4Endpoint>
                         || std::same_as<EndpointT, ninttp::IPv6Endpoint>, "Unsupported endpoint type");

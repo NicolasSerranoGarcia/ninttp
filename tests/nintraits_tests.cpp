@@ -23,8 +23,8 @@ int main() {
     const std::uint16_t v16 = 0x1234u;
     const std::uint32_t v32 = 0x12345678u;
 
-    const std::uint16_t network16 = ninttp::hostToNetwork16(v16);
-    const std::uint32_t network32 = ninttp::hostToNetwork32(v32);
+    const std::uint16_t network16 = ninttp::utils::hostToNetwork16(v16);
+    const std::uint32_t network32 = ninttp::utils::hostToNetwork32(v32);
 
 #if NINTTP_BYTE_ORDER == NINTTP_LITTLE_ENDIAN
     ok = checkEqual("hostToNetwork16", network16, 0x3412u) && ok;
@@ -37,11 +37,11 @@ int main() {
     ok = false;
 #endif
 
-    ok = checkEqual("networkToHost16 roundtrip", ninttp::networkToHost16(network16), v16) && ok;
-    ok = checkEqual("networkToHost32 roundtrip", ninttp::networkToHost32(network32), v32) && ok;
+    ok = checkEqual("networkToHost16 roundtrip", ninttp::utils::networkToHost16(network16), v16) && ok;
+    ok = checkEqual("networkToHost32 roundtrip", ninttp::utils::networkToHost32(network32), v32) && ok;
 
-    ok = checkEqual("16-bit involution", ninttp::hostToNetwork16(network16), v16) && ok;
-    ok = checkEqual("32-bit involution", ninttp::hostToNetwork32(network32), v32) && ok;
+    ok = checkEqual("16-bit involution", ninttp::utils::hostToNetwork16(network16), v16) && ok;
+    ok = checkEqual("32-bit involution", ninttp::utils::hostToNetwork32(network32), v32) && ok;
 
     return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -4,10 +4,10 @@
 #include <cstddef>
 #include <expected>
 #include <iostream>
-#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "../types.hpp"
 #include "http_parse_error.hpp"
@@ -35,11 +35,11 @@ namespace ninttp::internal
                 assert(state != Processing::Finished);
                 constructed.append(received);
 
-                while(1){
+                while(true){
                     switch(state){
                         case Processing::StatusLine:{
                             std::istringstream ss(constructed);
-                            size_t lineEnd;
+                            std::size_t lineEnd;
                             if(lineEnd = constructed.find("\r\n"); lineEnd == std::string::npos)
                                 return httpParseStatus::NeedData;
 
@@ -74,7 +74,7 @@ namespace ninttp::internal
                         }
 
                         case Processing::Headers:{
-                            size_t headerEnd;
+                            std::size_t headerEnd;
 
                             std::clog << "[http.response_parser] state=Headers; searching header terminator\n";
                             if(headerEnd = constructed.find("\r\n\r\n", lastProcessedIdx); headerEnd == std::string::npos){
@@ -95,7 +95,7 @@ namespace ninttp::internal
                             lastProcessedIdx += 2;
 
                             while(lastProcessedIdx < headerEnd){
-                                size_t lineEnd;
+                                std::size_t lineEnd;
 
                                 if(lineEnd = constructed.find("\r\n", lastProcessedIdx); lineEnd == std::string::npos)
                                     return httpParseStatus::NeedData;
@@ -183,7 +183,7 @@ namespace ninttp::internal
 
                             response.body.emplace();
 
-                            for(int i = 0; i != bodySize; i++)
+                            for(std::ptrdiff_t i = 0; i != bodySize; i++)
                                 response.body->push_back(constructed[lastProcessedIdx + i]);
 
                             std::clog << "[http.response_parser] state=Body -> Finished\n";

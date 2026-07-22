@@ -3,11 +3,11 @@
 #include <array>
 #include <cassert>
 #include <concepts>
+#include <cstddef>
 #include <expected>
 #include <iostream>
 #include <stdexcept>
-#include <utility>
-#include <vector>
+#include <string>
 
 #include "../endpoints.hpp"
 #include "../error/nin_error.hpp"
@@ -102,7 +102,7 @@ namespace ninttp
                         return std::unexpected{NinError::fromSocketError(err)};
                     }
 
-                    size_t read = res.value();
+                    std::size_t read = res.value();
 
                     if(read == 0){
                         std::clog << "[http.client] sender sent 0\n";
@@ -132,6 +132,6 @@ namespace ninttp
         private:
             std::string defaultHost;
 
-            static constexpr const int MAXFIELDVALUESIZE = 256;
+            static constexpr std::size_t MAXFIELDVALUESIZE = 256;
     };
 } // namespace ninttp

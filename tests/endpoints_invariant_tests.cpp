@@ -40,8 +40,8 @@ int main() {
         ok = checkEqual("IPv4 host address", endpoint.addressHostOrder(), hostAddress) && ok;
         ok = checkEqual("IPv4 host port", endpoint.portHostOrder(), hostPort) && ok;
         ok = checkEqual("IPv4 family", native.sin_family, AF_INET) && ok;
-        ok = checkEqual("IPv4 network address", native.sin_addr.s_addr, ninttp::hostToNetwork32(hostAddress)) && ok;
-        ok = checkEqual("IPv4 network port", native.sin_port, ninttp::hostToNetwork16(hostPort)) && ok;
+        ok = checkEqual("IPv4 network address", native.sin_addr.s_addr, ninttp::utils::hostToNetwork32(hostAddress)) && ok;
+        ok = checkEqual("IPv4 network port", native.sin_port, ninttp::utils::hostToNetwork16(hostPort)) && ok;
         ok = checkEqual("IPv4 storage length", ninttp::internal::SelectedBackend::storageLen(endpoint), sizeof(sockaddr_in)) && ok;
     }
 
@@ -49,8 +49,8 @@ int main() {
         ninttp::internal::SelectedBackend::AddressStorageT storage{};
         auto native = readIpv4(storage);
         native.sin_family = AF_INET;
-        native.sin_addr.s_addr = ninttp::hostToNetwork32(0x0A000001u);
-        native.sin_port = ninttp::hostToNetwork16(80u);
+        native.sin_addr.s_addr = ninttp::utils::hostToNetwork32(0x0A000001u);
+        native.sin_port = ninttp::utils::hostToNetwork16(80u);
         std::memcpy(&storage, &native, sizeof(native));
 
         const auto endpoint = ninttp::internal::SelectedBackend::fromStorage<ninttp::IPv4Endpoint>(storage);

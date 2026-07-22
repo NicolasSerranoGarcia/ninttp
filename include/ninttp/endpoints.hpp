@@ -14,8 +14,6 @@
 #include <array>
 #include <cstdint>
 
-#include "platform_traits.hpp"
-
 namespace ninttp
 {
     class IPv4Endpoint{
@@ -38,7 +36,7 @@ namespace ninttp
              * @post addressHostOrder() == hostOrderAddress.
              * @post portHostOrder() == hostOrderPort.
              */
-            constexpr IPv4Endpoint(uint32_t hostOrderAddress, uint16_t hostOrderPort) noexcept
+            constexpr IPv4Endpoint(std::uint32_t hostOrderAddress, std::uint16_t hostOrderPort) noexcept
                 : address_(hostOrderAddress), port_(hostOrderPort){}
 
             /**
@@ -48,7 +46,7 @@ namespace ninttp
              * @post The returned value is encoded as 0xAABBCCDD for address
              *       AA.BB.CC.DD.
              */
-            [[nodiscard]] constexpr uint32_t addressHostOrder() const noexcept{
+            [[nodiscard]] constexpr std::uint32_t addressHostOrder() const noexcept{
                 return address_;
             }
 
@@ -58,17 +56,17 @@ namespace ninttp
              * @pre None.
              * @post The returned value is in host byte order.
              */
-            [[nodiscard]] constexpr uint16_t portHostOrder() const noexcept{
+            [[nodiscard]] constexpr std::uint16_t portHostOrder() const noexcept{
                 return port_;
             }
 
-            [[nodiscard]] static constexpr inline IPv4Endpoint loopback(uint16_t hostOrderPort) noexcept{
+            [[nodiscard]] static constexpr inline IPv4Endpoint loopback(std::uint16_t hostOrderPort) noexcept{
                 return IPv4Endpoint{0x7F000001u, hostOrderPort};
             }
 
         private:
-            uint32_t address_ = 0;
-            uint16_t port_ = 0;
+            std::uint32_t address_ = 0;
+            std::uint16_t port_ = 0;
     };
 
     class IPv6Endpoint{
@@ -93,7 +91,7 @@ namespace ninttp
              * @post addressBytes() == addressBytes.
              * @post portHostOrder() == hostOrderPort.
              */
-            constexpr IPv6Endpoint(AddressBytes addressBytes, uint16_t hostOrderPort) noexcept
+            constexpr IPv6Endpoint(AddressBytes addressBytes, std::uint16_t hostOrderPort) noexcept
                 : address_(addressBytes), port_(hostOrderPort){}
 
             /**
@@ -113,11 +111,11 @@ namespace ninttp
              * @pre None.
              * @post The returned value is in host byte order.
              */
-            [[nodiscard]] constexpr uint16_t portHostOrder() const noexcept{
+            [[nodiscard]] constexpr std::uint16_t portHostOrder() const noexcept{
                 return port_;
             }
 
-            [[nodiscard]] static constexpr inline IPv6Endpoint loopback(uint16_t hostOrderPort) noexcept{
+            [[nodiscard]] static constexpr inline IPv6Endpoint loopback(std::uint16_t hostOrderPort) noexcept{
                 AddressBytes bytes{};
                 bytes[15] = 1;
                 return IPv6Endpoint{bytes, hostOrderPort};
@@ -125,6 +123,6 @@ namespace ninttp
 
         private:
             AddressBytes address_{};
-            uint16_t port_ = 0;
+            std::uint16_t port_ = 0;
     };
 } // namespace ninttp

@@ -5,19 +5,14 @@
 #include <cstddef>
 #include <expected>
 #include <iostream>
-#include <optional>
-#include <span>
-#include <sstream>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 #include "http_parse_error.hpp"
 #include "../types.hpp"
 #include "parse_utils.hpp"
-
-using namespace ninttp::utils;
 
 //TODO: move all static private utilities to a parse_utilities.hpp header file so that they can be reused in the response parser and leaves bloat off this file
 
@@ -51,7 +46,7 @@ namespace ninttp::internal
                 assert(state != Processing::Finished);
                 constructed.append(received);
 
-                while(1){
+                while(true){
                     switch(state){
                         case Processing::RequestLine:{
                             if(constructed.size() > MaxRequestLineLength)
@@ -63,7 +58,7 @@ namespace ninttp::internal
                                 case RequestLineProcessing::Method:{
                                     assert(lastProcessedIdx == std::string::npos);
 
-                                    if(hasPrecedingWhitespace(constructed))
+                                    if(utils::hasPrecedingWhitespace(constructed))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
                                                                                 .parseContextText = contextFrom(0),
                                                                                 .what = "Request line contains preceeding whitespace"}};
@@ -88,7 +83,7 @@ namespace ninttp::internal
                                                                                 .what = "Method token exceeds the configured maximum length"}};
 
                                     for(const char c : lineMethod){
-                                        if(!isTChar(c))
+                                        if(!utils::isTChar(c))
                                             return std::unexpected{httpParseError{ .type = httpParseErrorType::DisallowedTokenChar,
                                                                                     .parseContextText = std::string(lineMethod),
                                                                                     .what = "Method contains a character not allowed in an HTTP token"}};
@@ -103,7 +98,7 @@ namespace ninttp::internal
 
                                 case RequestLineProcessing::Target:{
 
-                                    if(hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
+                                    if(utils::hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
                                                                                 .parseContextText = contextFrom(lastProcessedIdx),
                                                                                 .what = "Request line contains extra whitespace between method and target"}};
@@ -143,7 +138,7 @@ namespace ninttp::internal
 
                                 case RequestLineProcessing::Version:{
 
-                                    if(hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
+                                    if(utils::hasPrecedingWhitespace(std::string_view{constructed}.substr(lastProcessedIdx)))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
                                                                                 .parseContextText = contextFrom(lastProcessedIdx),
                                                                                 .what = "Request line contains extra whitespace between target and version"}};
@@ -164,7 +159,7 @@ namespace ninttp::internal
 
                                     std::string_view version = std::string_view{constructed}.substr(lastProcessedIdx, requestLineEnd - lastProcessedIdx);
 
-                                    if(hasTrailingWhitespace(version))
+                                    if(utils::hasTrailingWhitespace(version))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::ExtraWhitespace,
                                                                                 .parseContextText = std::string(version),
                                                                                 .what = "Request line contains extra trailing whitespace"}};
@@ -218,9 +213,9 @@ namespace ninttp::internal
 
                         case Processing::Headers:{
                             assert(!request.method.empty());
-                            size_t currentHeaderEnd;
+                            std::size_t currentHeaderEnd;
 
-                            while(1){
+                            while(true){
                                 //SYNC POINT: CRLF delimiting one header at a time
                                 if(currentHeaderEnd = constructed.find("\r\n", lastProcessedIdx); currentHeaderEnd == std::string::npos)
                                     return httpParseStatus::NeedData;
@@ -237,7 +232,7 @@ namespace ninttp::internal
                                     return std::unexpected{std::move(header).error()};
 
                                 auto parsedHeader = std::move(header).value();
-                                parsedHeader.name = toLower(std::move(parsedHeader.name));
+                                parsedHeader.name = utils::toLower(std::move(parsedHeader.name));
 
                                 //TODO: normalize standard headers into an enum to avoid string comparisons
                                 if((parsedHeader.name == "content-length" && request.headers.contains("transfer-encoding")) ||
@@ -416,7 +411,7 @@ namespace ninttp::internal
                 header.value = headers.substr(lastProcessedIdx, currentHeaderEnd - lastProcessedIdx);
 
                 for(char c : header.name){
-                    if(!isTChar(c))
+                    if(!utils::isTChar(c))
                         return std::unexpected{httpParseError{ .type = httpParseErrorType::DisallowedTokenChar,
                                                                 .parseContextText = header.name,
                                                                 .what = "Header name contains prohibited chars specified in RFC 9112"}};
@@ -464,9 +459,9 @@ namespace ninttp::internal
 
             std::string leftoverBytes;
 
-            static constexpr const std::size_t MaxMethodLength = 32;
-            static constexpr const std::size_t MaxRequestTargetLength = 8000;
-            static constexpr const std::size_t HTTPVersionLength = 8;
-            static constexpr const std::size_t MaxRequestLineLength = MaxMethodLength + MaxRequestTargetLength + 4 /*2 SP & CRLF*/ + HTTPVersionLength;
+            static constexpr std::size_t MaxMethodLength = 32;
+            static constexpr std::size_t MaxRequestTargetLength = 8000;
+            static constexpr std::size_t HTTPVersionLength = 8;
+            static constexpr std::size_t MaxRequestLineLength = MaxMethodLength + MaxRequestTargetLength + 4 /*2 SP & CRLF*/ + HTTPVersionLength;
     };
 } // namespace ninttp::internal
