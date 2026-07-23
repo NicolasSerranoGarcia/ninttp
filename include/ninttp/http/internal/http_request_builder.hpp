@@ -12,6 +12,8 @@ namespace ninttp::internal{
     //TODO: for more general use, assert that get is called only when there is a host and a target. for now it is only being used by the GET client
     template<httpVersion ver = http_1_0>
     class httpRequestBuilder{
+        static_assert(isSupportedHTTP1Version(ver),
+            "HTTP request builder only supports HTTP/1.0 and HTTP/1.1");
         public:
             explicit httpRequestBuilder(std::string_view method){
                 request.setMethod(std::string(method));

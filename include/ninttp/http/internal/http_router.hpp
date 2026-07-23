@@ -13,6 +13,8 @@
 namespace ninttp::internal{
     template<httpVersion ver = http_1_0>
     class httpRouter{
+        static_assert(isSupportedHTTP1Version(ver),
+            "HTTP router only supports HTTP/1.0 and HTTP/1.1");
         using HandlerT = std::function<void(const Request&, Response&)>;
         public:
             std::expected<std::reference_wrapper<const HandlerT>, StatusCode>

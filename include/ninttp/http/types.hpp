@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <charconv>
 #include <cstddef>
@@ -84,10 +85,26 @@ namespace ninttp
     constexpr const httpVersion http_1_0(1,0);
     constexpr const httpVersion http_1_1(1,1);
 
+    [[nodiscard]] constexpr bool isSupportedHTTP1Version(httpVersion version) noexcept{
+        return version.major == 1 && (version.minor == 0 || version.minor == 1);
+    }
+
+    [[nodiscard]] constexpr bool usesHTTP11Rules(httpVersion version) noexcept{
+        return version.major == 1 && version.minor >= 1;
+    }
+
     enum class RequestBodyFraming{
         None,
         ContentLength,
         Chunked
+    };
+
+    enum class ResponseBodyFraming{
+        None,
+        ContentLength,
+        Chunked,
+        ConnectionClose,
+        Tunnel
     };
 
     namespace internal{
@@ -192,8 +209,22 @@ namespace ninttp
                 return body;
             }
 
-            constexpr void setVersion(httpVersion responseVersion) noexcept{
+            [[nodiscard]] const std::optional<Headers>& getTrailingHeaders() const noexcept{
+                return trailingHeaders;
+            }
+
+            [[nodiscard]] constexpr ResponseBodyFraming getBodyFraming() const noexcept{
+                return bodyFraming;
+            }
+
+            constexpr bool setVersion(httpVersion responseVersion) noexcept{
+                if(!isSupportedHTTP1Version(responseVersion) ||
+                    (bodyFraming == ResponseBodyFraming::Chunked &&
+                        !usesHTTP11Rules(responseVersion)))
+                    return false;
+
                 version = responseVersion;
+                return true;
             }
 
             constexpr void setStatusCode(StatusCode responseStatus) noexcept{
@@ -232,17 +263,115 @@ namespace ninttp
                 return true;
             }
 
-            void setContent(std::string content){
+            bool setContent(
+                std::string content,
+                ResponseBodyFraming framing = ResponseBodyFraming::ContentLength)
+            {
+                if((framing == ResponseBodyFraming::None && !content.empty()) ||
+                    (framing == ResponseBodyFraming::Chunked && !usesHTTP11Rules(version)))
+                    return false;
+
+                eraseManagedFramingHeaders();
                 body = std::move(content);
-                setManagedHeader("Content-Length", std::to_string(body->size()));
+                bodyFraming = framing;
+
+                switch(bodyFraming){
+                    case ResponseBodyFraming::None:
+                        body.reset();
+                        trailingHeaders.reset();
+                        break;
+                    case ResponseBodyFraming::ContentLength:
+                        setManagedHeader("Content-Length", std::to_string(body->size()));
+                        trailingHeaders.reset();
+                        break;
+                    case ResponseBodyFraming::Chunked:
+                        setManagedHeader("Transfer-Encoding", "chunked");
+                        break;
+                    case ResponseBodyFraming::ConnectionClose:
+                    case ResponseBodyFraming::Tunnel:
+                        trailingHeaders.reset();
+                        break;
+                }
+
+                return true;
             }
 
             void clearContent(){
                 body.reset();
+                trailingHeaders.reset();
+                eraseManagedFramingHeaders();
+                bodyFraming = ResponseBodyFraming::ContentLength;
                 setManagedHeader("Content-Length", "0");
             }
 
+            bool addTrailingHeader(std::string name, std::string value){
+                if(bodyFraming != ResponseBodyFraming::Chunked)
+                    return false;
+
+                if(name.empty() ||
+                    internal::HeaderField{.name = name}.nameEquals("content-length") ||
+                    internal::HeaderField{.name = name}.nameEquals("transfer-encoding"))
+                    return false;
+
+                if(!trailingHeaders.has_value())
+                    trailingHeaders.emplace();
+
+                trailingHeaders->push_back(internal::HeaderField{
+                    .name = std::move(name),
+                    .value = std::move(value)
+                });
+                return true;
+            }
+
+            [[nodiscard]] bool hasConsistentBodyFraming() const noexcept{
+                const auto contentLength = findHeader("content-length");
+                const auto transferEncoding = findHeader("transfer-encoding");
+                const auto bodyLength = body.has_value() ? body->size() : 0;
+
+                switch(bodyFraming){
+                    case ResponseBodyFraming::None:
+                        return !trailingHeaders.has_value() &&
+                            (!body.has_value() || body->empty());
+
+                    case ResponseBodyFraming::ContentLength:{
+                        if(contentLength == headers.end() ||
+                            transferEncoding != headers.end() ||
+                            trailingHeaders.has_value())
+                            return false;
+
+                        std::size_t declaredLength = 0;
+                        const char* first = contentLength->value.data();
+                        const char* last = first + contentLength->value.size();
+                        const auto parsed = std::from_chars(first, last, declaredLength);
+
+                        return parsed.ec == std::errc{} &&
+                            parsed.ptr == last &&
+                            declaredLength == bodyLength;
+                    }
+
+                    case ResponseBodyFraming::Chunked:
+                        return usesHTTP11Rules(version) &&
+                            contentLength == headers.end() &&
+                            transferEncoding != headers.end() &&
+                            internal::HeaderField{
+                                .name = transferEncoding->value
+                            }.nameEquals("chunked");
+
+                    case ResponseBodyFraming::ConnectionClose:
+                        return contentLength == headers.end() &&
+                            transferEncoding == headers.end() &&
+                            !trailingHeaders.has_value();
+
+                    case ResponseBodyFraming::Tunnel:
+                        return !trailingHeaders.has_value();
+                }
+
+                return false;
+            }
+
             [[nodiscard]] std::string toString() const{
+                assert(isSupportedHTTP1Version(version));
+                assert(hasConsistentBodyFraming());
                 std::string responseStr;
 
                 responseStr += version.toHeaderString();
@@ -261,8 +390,47 @@ namespace ninttp
 
                 responseStr += "\r\n";
 
-                if(body.has_value())
-                    responseStr += body.value();
+                const auto bodyLength = body.has_value() ? body->size() : 0;
+
+                switch(bodyFraming){
+                    case ResponseBodyFraming::None:
+                        break;
+                    case ResponseBodyFraming::ContentLength:
+                    case ResponseBodyFraming::ConnectionClose:
+                    case ResponseBodyFraming::Tunnel:
+                        if(body.has_value())
+                            responseStr += body.value();
+                        break;
+                    case ResponseBodyFraming::Chunked:{
+                        if(bodyLength != 0){
+                            char encodedLength[sizeof(std::size_t) * 2];
+                            const auto encoded = std::to_chars(
+                                encodedLength,
+                                encodedLength + sizeof(encodedLength),
+                                bodyLength,
+                                16);
+
+                            responseStr.append(encodedLength, encoded.ptr);
+                            responseStr += "\r\n";
+                            responseStr += body.value();
+                            responseStr += "\r\n";
+                        }
+
+                        responseStr += "0\r\n";
+
+                        if(trailingHeaders.has_value()){
+                            for(const auto& trailer : trailingHeaders.value()){
+                                responseStr += trailer.name;
+                                responseStr += ": ";
+                                responseStr += trailer.value;
+                                responseStr += "\r\n";
+                            }
+                        }
+
+                        responseStr += "\r\n";
+                        break;
+                    }
+                }
 
                 return responseStr;
             }
@@ -300,10 +468,34 @@ namespace ninttp
                 });
             }
 
+            Headers::const_iterator findHeader(std::string_view name) const noexcept{
+                return std::find_if(headers.begin(), headers.end(), [name](const auto& header){
+                    return header.nameEquals(name);
+                });
+            }
+
+            void eraseManagedFramingHeaders(){
+                std::erase_if(headers, [](const auto& header){
+                    return header.nameEquals("content-length") ||
+                        header.nameEquals("transfer-encoding");
+                });
+            }
+
+            void reset(){
+                version = http_1_0;
+                statusCode = 200;
+                headers.clear();
+                body.reset();
+                trailingHeaders.reset();
+                bodyFraming = ResponseBodyFraming::None;
+            }
+
             httpVersion version = http_1_0;
             StatusCode statusCode = 200;
             Headers headers;
             std::optional<std::string> body;
+            std::optional<Headers> trailingHeaders;
+            ResponseBodyFraming bodyFraming = ResponseBodyFraming::None;
     };
 
     class Request{
@@ -347,8 +539,14 @@ namespace ninttp
                 target = std::move(requestTarget);
             }
 
-            constexpr void setVersion(httpVersion requestVersion) noexcept{
+            constexpr bool setVersion(httpVersion requestVersion) noexcept{
+                if(!isSupportedHTTP1Version(requestVersion) ||
+                    (bodyFraming == RequestBodyFraming::Chunked &&
+                        !usesHTTP11Rules(requestVersion)))
+                    return false;
+
                 version = requestVersion;
+                return true;
             }
 
             bool setHeader(std::string name, std::string value){
@@ -362,7 +560,8 @@ namespace ninttp
             }
 
             bool setContent(std::string content, RequestBodyFraming framing = RequestBodyFraming::ContentLength){
-                if(framing == RequestBodyFraming::None && !content.empty())
+                if((framing == RequestBodyFraming::None && !content.empty()) ||
+                    (framing == RequestBodyFraming::Chunked && !usesHTTP11Rules(version)))
                     return false;
 
                 headers.erase("content-length");
@@ -414,6 +613,12 @@ namespace ninttp
             }
 
             [[nodiscard]] bool hasConsistentBodyFraming() const noexcept{
+                if(!isSupportedHTTP1Version(version))
+                    return false;
+
+                if(usesHTTP11Rules(version) && !headers.contains("host"))
+                    return false;
+
                 const auto contentLength = headers.find("content-length");
                 const auto transferEncoding = headers.find("transfer-encoding");
                 const auto bodyLength = body.has_value() ? body->size() : 0;
@@ -442,7 +647,8 @@ namespace ninttp
                     }
 
                     case RequestBodyFraming::Chunked:
-                        return contentLength == headers.end() &&
+                        return usesHTTP11Rules(version) &&
+                            contentLength == headers.end() &&
                             transferEncoding != headers.end() &&
                             transferEncoding->second == "chunked";
                 }

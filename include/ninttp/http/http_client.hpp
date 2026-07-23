@@ -22,6 +22,8 @@ namespace ninttp
 {
     template<httpVersion ver = http_1_0, typename EndpointT = IPv4Endpoint>
     class httpClient{
+        static_assert(isSupportedHTTP1Version(ver),
+            "HTTP client only supports HTTP/1.0 and HTTP/1.1");
         static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
             "HTTP client only accepts IPv4 or IPv6 endpoints");
 
@@ -81,7 +83,7 @@ namespace ninttp
             StreamSocket<EndpointT> streamSock_;
 
             std::expected<Response, NinError> parseResponse(StreamSocket<EndpointT>& sock){
-                internal::httpResponseParser parser;
+                internal::httpResponseParser<ver> parser;
                 std::string got;
 
                 std::array<char, limits::ReadBufferSize> buf{};

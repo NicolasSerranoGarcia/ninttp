@@ -26,6 +26,8 @@ namespace ninttp::internal
     //this way we can reuse the object and expand its lifetime 
     template<httpVersion ver = http_1_0>
     class httpRequestParser{
+        static_assert(isSupportedHTTP1Version(ver),
+            "HTTP request parser only supports HTTP/1.0 and HTTP/1.1");
 
         enum class Processing{
             RequestLine,
@@ -205,7 +207,7 @@ namespace ninttp::internal
                                                                                 .parseContextText = std::string(version),
                                                                                 .what = std::string("Unrecognized version from request line ") + std::string(version)}};
 
-                                    if(v.value().major != 1 || v.value().major > ver.major)
+                                    if(v.value().major != 1)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::UnsupportedVersion, 
                                                                                 .parseContextText = std::string(version),
                                                                                 .what = std::string("Cannot parse request with version ") + std::string(version) + 
@@ -302,7 +304,7 @@ namespace ninttp::internal
                                         continue;
                                     }
                                 }else if(parsedHeader.name == "transfer-encoding"){
-                                    if(request.version.major != 1 || request.version.minor < 1)
+                                    if(!usesHTTP11Rules(request.version))
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::UnexpectedToken,
                                                                                 .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
                                                                                 .what = "Transfer-Encoding is not valid for an HTTP/1.0 request"}};
@@ -335,8 +337,7 @@ namespace ninttp::internal
                                 }
                             }
 
-                            if(request.version.major == 1 && request.version.minor >= 1 &&
-                                !request.headers.contains("host"))
+                            if(usesHTTP11Rules(request.version) && !request.headers.contains("host"))
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::MissingHostHeader,
                                                                         .parseContextText = contextFrom(0),
                                                                         .what = "Expected request to contain required host header but did not find it"}};

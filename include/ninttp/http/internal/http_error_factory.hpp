@@ -6,6 +6,8 @@
 namespace ninttp::internal{
     template <httpVersion ver>
     class httpErrorFactory{
+        static_assert(isSupportedHTTP1Version(ver),
+            "HTTP error factory only supports HTTP/1.0 and HTTP/1.1");
         public:
             static std::string fromStatusCode(StatusCode code){
                 Response response{ver, code};

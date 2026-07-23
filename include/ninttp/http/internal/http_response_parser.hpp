@@ -19,6 +19,8 @@ namespace ninttp::internal
     //uses builder pattern to craft a Request object that can be retrieved when a packet is completed
     template<httpVersion ver = http_1_0>
     class httpResponseParser{
+        static_assert(isSupportedHTTP1Version(ver),
+            "HTTP response parser only supports HTTP/1.0 and HTTP/1.1");
 
         enum class Processing{
             StatusLine,

@@ -25,6 +25,8 @@ namespace ninttp
 {
     template<httpVersion ver = http_1_0, typename EndpointT = IPv4Endpoint>
     class httpServer{
+        static_assert(isSupportedHTTP1Version(ver),
+            "HTTP server only supports HTTP/1.0 and HTTP/1.1");
         static_assert(std::same_as<EndpointT, IPv4Endpoint> || std::same_as<EndpointT, IPv6Endpoint>,
             "HTTP server only accepts IPv4 or IPv6 endpoints");
 
