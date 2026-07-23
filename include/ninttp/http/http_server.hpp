@@ -16,6 +16,7 @@
 #include "../socket/socket.hpp"
 #include "../socket/traits.hpp"
 #include "internal/http_error_factory.hpp"
+#include "http_limits.hpp"
 #include "internal/http_request_parser.hpp"
 #include "internal/http_router.hpp"
 #include "types.hpp"
@@ -60,7 +61,7 @@ namespace ninttp
                 if(auto bindRes = listenerSock_.bind(interf); !bindRes.has_value())
                     return std::unexpected{NinError::fromSocketError(bindRes.error())};
 
-                if(auto listenRes = listenerSock_.listen(MAX_BACKLOG); !listenRes.has_value())
+                if(auto listenRes = listenerSock_.listen(limits::MaxServerBacklog); !listenRes.has_value())
                     return std::unexpected{NinError::fromSocketError(listenRes.error())};
 
                 while(true){
@@ -170,13 +171,11 @@ namespace ninttp
 
             std::vector<StreamSocket<EndpointT>> clientSockets_;
 
-            static constexpr int MAX_BACKLOG = 100;
-
             std::expected<Request, NinError> parseConnection(StreamSocket<EndpointT>& sock){
-                internal::httpRequestParser parser;
+                internal::httpRequestParser<ver> parser;
                 std::string got;
 
-                std::array<char, 512> buf{};
+                std::array<char, limits::ReadBufferSize> buf{};
 
                 auto htppParseStatus = internal::httpParseStatus::NeedData;
                 do{

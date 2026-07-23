@@ -1,6 +1,67 @@
 # ninttp
 An easy-to-use http server-client library written in C++
 
+## HTTP limits
+
+HTTP parser and server limits have safe defaults in
+`ninttp/http/http_limits.hpp`. Override only the values your application needs;
+unspecified limits retain their defaults.
+
+With CMake, pass the limit's exact name:
+
+```sh
+cmake -S . -B build \
+  -DMaxBodyLength=134217728 \
+  -DMaxHeaderCount=200
+cmake --build build
+```
+
+When using ninttp through `add_subdirectory`, set the values before adding it:
+
+```cmake
+set(MaxBodyLength 134217728)
+set(MaxHeaderCount 200)
+add_subdirectory(path/to/ninttp)
+```
+
+When consuming the headers without ninttp's CMake project, use compiler
+definitions with the same names:
+
+```sh
+c++ -DMaxBodyLength=134217728 -DMaxHeaderCount=200 ...
+```
+
+Configured values are available as constants in `ninttp::limits`, for example
+`ninttp::limits::MaxBodyLength`. Limit values are byte counts unless their name
+ends in `Count`; `MaxServerBacklog` is a connection count.
+
+| Limit | Default | Controls |
+| --- | ---: | --- |
+| `MaxMethodLength` | 32 | Request method |
+| `MaxRequestTargetLength` | 8000 | Request target |
+| `HTTPVersionLength` | 8 | HTTP version token |
+| `MaxRequestLineLength` | derived | Complete request line |
+| `MaxStatusLineLength` | 8192 | Complete response status line |
+| `MaxHeaderNameLength` | 256 | Header field name |
+| `MaxHeaderValueLength` | 8192 | Parsed header field value |
+| `MaxHeaderLineLength` | 16384 | One header line |
+| `MaxHeaderSectionLength` | 65536 | Complete header section |
+| `MaxHeaderCount` | 100 | Header fields |
+| `MaxTrailerLineLength` | 16384 | One trailer line |
+| `MaxTrailerSectionLength` | 65536 | Complete trailer section |
+| `MaxTrailerCount` | 100 | Trailer fields |
+| `MaxBodyLength` | 67108864 | Decoded message body |
+| `MaxChunkLength` | 16777216 | One chunk |
+| `MaxChunkLineLength` | 8224 | Chunk-size line including extensions |
+| `MaxChunkExtensionsLength` | 8192 | Extensions on one chunk |
+| `MaxFieldValueLength` | 256 | Client-configured field values such as Host |
+| `ReadBufferSize` | 512 | Socket read buffer |
+| `MaxServerBacklog` | 100 | Listener backlog |
+
+If `MaxRequestLineLength` is not explicitly configured, its default is
+recalculated from `MaxMethodLength`, `MaxRequestTargetLength`, and
+`HTTPVersionLength`.
+
 ## HTTP extension methods
 
 HTTP method names are case-sensitive tokens. ninttp recognizes the standard method names with

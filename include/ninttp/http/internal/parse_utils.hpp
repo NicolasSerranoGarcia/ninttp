@@ -23,6 +23,18 @@ namespace ninttp::utils{
         return c;
     }
 
+    constexpr static bool asciiCaseInsensitiveEquals(std::string_view left, std::string_view right) noexcept{
+        if(left.size() != right.size())
+            return false;
+
+        for(std::size_t idx = 0; idx < left.size(); ++idx){
+            if(asciiLower(left[idx]) != asciiLower(right[idx]))
+                return false;
+        }
+
+        return true;
+    }
+
     constexpr static std::string toLower(std::string str) noexcept{
         for(char& c : str)
             c = asciiLower(c);

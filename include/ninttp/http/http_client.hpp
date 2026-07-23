@@ -15,6 +15,7 @@
 #include "../socket/traits.hpp"
 #include "internal/http_response_parser.hpp"
 #include "internal/http_request_builder.hpp"
+#include "http_limits.hpp"
 #include "types.hpp"
 
 namespace ninttp
@@ -42,7 +43,7 @@ namespace ninttp
                 if(host.empty())
                     throw std::out_of_range("expected host value parameter to contain a non-empty string");
 
-                if(host.size() > MAXFIELDVALUESIZE)
+                if(host.size() > limits::MaxFieldValueLength)
                     throw std::out_of_range("Host value exceeds maximum header field length of 256");
 
                 defaultHost = host;
@@ -53,7 +54,7 @@ namespace ninttp
                 if(host.empty())
                     return std::unexpected(std::out_of_range("expected host value parameter to contain a non-empty string"));
 
-                if(host.size() > MAXFIELDVALUESIZE)
+                if(host.size() > limits::MaxFieldValueLength)
                     return std::unexpected(std::out_of_range("host value exceeds maximum header field length of 256"));
 
                 defaultHost = host;
@@ -83,7 +84,7 @@ namespace ninttp
                 internal::httpResponseParser parser;
                 std::string got;
 
-                std::array<char, 512> buf{};
+                std::array<char, limits::ReadBufferSize> buf{};
 
                 auto htppParseStatus = internal::httpParseStatus::NeedData;
                 do{
@@ -132,6 +133,5 @@ namespace ninttp
         private:
             std::string defaultHost;
 
-            static constexpr std::size_t MAXFIELDVALUESIZE = 256;
     };
 } // namespace ninttp

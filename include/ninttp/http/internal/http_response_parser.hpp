@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 
+#include "../http_limits.hpp"
 #include "../types.hpp"
 #include "http_parse_error.hpp"
 
@@ -40,8 +41,15 @@ namespace ninttp::internal
                         case Processing::StatusLine:{
                             std::istringstream ss(constructed);
                             std::size_t lineEnd;
-                            if(lineEnd = constructed.find("\r\n"); lineEnd == std::string::npos)
+                            if(lineEnd = constructed.find("\r\n"); lineEnd == std::string::npos){
+                                if(constructed.size() > limits::MaxStatusLineLength)
+                                    return lengthLimitError("Status line exceeds configured maximum length");
+
                                 return httpParseStatus::NeedData;
+                            }
+
+                            if(lineEnd + 2 > limits::MaxStatusLineLength)
+                                return lengthLimitError("Status line exceeds configured maximum length");
 
                             std::string version;
                             ss >> version >> response.statusCode;
@@ -78,9 +86,17 @@ namespace ninttp::internal
 
                             std::clog << "[http.response_parser] state=Headers; searching header terminator\n";
                             if(headerEnd = constructed.find("\r\n\r\n", lastProcessedIdx); headerEnd == std::string::npos){
+                                if(constructed.size() - static_cast<std::size_t>(lastProcessedIdx) >
+                                    limits::MaxHeaderSectionLength)
+                                    return lengthLimitError("Header section exceeds configured maximum length");
+
                                 std::clog << "[http.response_parser] state=Headers; did not find CRLFCRLF for headers\n";
                                 return httpParseStatus::NeedData;
                             }
+
+                            if(headerEnd - static_cast<std::size_t>(lastProcessedIdx) + 4 >
+                                limits::MaxHeaderSectionLength)
+                                return lengthLimitError("Header section exceeds configured maximum length");
 
                             //TODO: for both request and resonse parsers
                             //No headers does not necessarily mean no body? at least for the response it is strictily not needed because streams until shutdown of 
@@ -93,6 +109,7 @@ namespace ninttp::internal
                             }
 
                             lastProcessedIdx += 2;
+                            std::size_t headerCount = 0;
 
                             while(lastProcessedIdx < headerEnd){
                                 std::size_t lineEnd;
@@ -100,12 +117,27 @@ namespace ninttp::internal
                                 if(lineEnd = constructed.find("\r\n", lastProcessedIdx); lineEnd == std::string::npos)
                                     return httpParseStatus::NeedData;
 
+                                if(lineEnd - static_cast<std::size_t>(lastProcessedIdx) >
+                                    limits::MaxHeaderLineLength)
+                                    return lengthLimitError("Header line exceeds configured maximum length");
+
+                                if(++headerCount > limits::MaxHeaderCount)
+                                    return lengthLimitError("Header count exceeds configured maximum");
+
                                 auto colon = constructed.find(':', lastProcessedIdx);
 
-                                if(colon == std::string::npos)
+                                if(colon == std::string::npos || colon >= lineEnd)
                                     return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
                                                                             .parseContextText = contextLine(lastProcessedIdx, lineEnd),
                                                                             .what = "Malformed http packet"}};
+
+                                if(colon - static_cast<std::size_t>(lastProcessedIdx) >
+                                    limits::MaxHeaderNameLength)
+                                    return lengthLimitError("Header field name exceeds configured maximum length");
+
+                                const auto rawValueLength = lineEnd - colon - 1;
+                                if(rawValueLength > limits::MaxHeaderValueLength)
+                                    return lengthLimitError("Header field value exceeds configured maximum length");
 
                                 internal::HeaderField header;
 
@@ -156,6 +188,9 @@ namespace ninttp::internal
                                                         .what = std::string{"Expected Content-Length field to be non-negative, given "} + header.value }
                                     };
                                 }
+
+                                if(static_cast<std::size_t>(bodySize) > limits::MaxBodyLength)
+                                    return lengthLimitError("Content-Length exceeds configured maximum body length");
 
                                 break;
                             }
@@ -230,6 +265,16 @@ namespace ninttp::internal
                 lastProcessedIdx = -1;
                 bodySize = -1;
                 state = Processing::StatusLine;
+            }
+
+            std::unexpected<httpParseError> lengthLimitError(std::string message) const{
+                const auto start = lastProcessedIdx < 0
+                    ? std::string::size_type{0}
+                    : static_cast<std::string::size_type>(lastProcessedIdx);
+
+                return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                        .parseContextText = contextLine(start, constructed.size()),
+                                                        .what = std::move(message)}};
             }
 
             std::string contextLine(std::string::size_type start, std::string::size_type end) const{

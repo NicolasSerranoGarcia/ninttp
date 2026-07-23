@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "http_parse_error.hpp"
+#include "../http_limits.hpp"
 #include "../types.hpp"
 #include "parse_utils.hpp"
 
@@ -56,7 +57,12 @@ namespace ninttp::internal
                 while(true){
                     switch(state){
                         case Processing::RequestLine:{
-                            if(constructed.size() > MaxRequestLineLength)
+                            const auto requestLineEnd = constructed.find("\r\n");
+                            const auto requestLineLength = requestLineEnd == std::string::npos
+                                ? constructed.size()
+                                : requestLineEnd + 2;
+
+                            if(requestLineLength > limits::MaxRequestLineLength)
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::RequestLineTooLong,
                                                                         .parseContextText = contextFrom(lastProcessedIdx == std::string::npos ? 0 : lastProcessedIdx),
                                                                         .what = "Request line exceeds total length allowed by the RFC 9112"}};
@@ -74,7 +80,7 @@ namespace ninttp::internal
                                     auto methodResourceSP = constructed.find(' ');
 
                                     if(methodResourceSP == std::string::npos){
-                                        if(constructed.size() > MaxMethodLength)
+                                        if(constructed.size() > limits::MaxMethodLength)
                                             return std::unexpected{httpParseError{ .type = httpParseErrorType::MethodTooLong, 
                                                                                 .parseContextText = contextFrom(0),
                                                                                 .what = "Method token exceeds the configured maximum length"}};
@@ -84,7 +90,7 @@ namespace ninttp::internal
 
                                     std::string_view lineMethod = std::string_view{constructed}.substr(0, methodResourceSP);
 
-                                    if(lineMethod.size() > MaxMethodLength)
+                                    if(lineMethod.size() > limits::MaxMethodLength)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::MethodTooLong,
                                                                                 .parseContextText = std::string(lineMethod),
                                                                                 .what = "Method token exceeds the configured maximum length"}};
@@ -110,14 +116,19 @@ namespace ninttp::internal
                                                                                 .parseContextText = contextFrom(lastProcessedIdx),
                                                                                 .what = "Request line contains extra whitespace between method and target"}};
 
-                                    if(std::string_view{constructed}.substr(lastProcessedIdx).size() > MaxRequestTargetLength)
-                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::TargetTooLong, 
-                                                                            .parseContextText = contextFrom(lastProcessedIdx),
-                                                                            .what = "Target length exceeds max length possible for RFC 9112"}};
-
                                     //SYNC POINT: space delimited between the resource and the version
                                     auto targetVersionSP = constructed.find(' ', lastProcessedIdx);
                                     auto requestLineEnd = constructed.find("\r\n", lastProcessedIdx);
+                                    const auto targetEnd =
+                                        requestLineEnd != std::string::npos &&
+                                        (targetVersionSP == std::string::npos || requestLineEnd < targetVersionSP)
+                                            ? requestLineEnd
+                                            : (targetVersionSP == std::string::npos ? constructed.size() : targetVersionSP);
+
+                                    if(targetEnd - lastProcessedIdx > limits::MaxRequestTargetLength)
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::TargetTooLong,
+                                                                            .parseContextText = contextFrom(lastProcessedIdx),
+                                                                            .what = "Target length exceeds max length possible for RFC 9112"}};
 
                                     //avoid reporting the need for more data when we find a CRLF but not a SP, as CRLF is reserved only for the request line delimiter
                                     if(requestLineEnd != std::string::npos && (targetVersionSP == std::string::npos || requestLineEnd < targetVersionSP))
@@ -134,9 +145,24 @@ namespace ninttp::internal
                                         return httpParseStatus::NeedData;
                                     }
 
-                                    request.target = constructed.substr(lastProcessedIdx, targetVersionSP - lastProcessedIdx);
+                                    const auto target = std::string_view{constructed}.substr(
+                                        lastProcessedIdx,
+                                        targetVersionSP - lastProcessedIdx);
 
-                                    //TODO: validate syntactic correctness of request.target only to comply with standard requirements of RFC
+                                    if(target.empty())
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken,
+                                                                                .parseContextText = contextFrom(lastProcessedIdx),
+                                                                                .what = "Request target cannot be empty"}};
+
+                                    for(const char c : target){
+                                        const auto byte = static_cast<unsigned char>(c);
+                                        if(byte <= 0x20 || byte == 0x7f)
+                                            return std::unexpected{httpParseError{ .type = httpParseErrorType::DisallowedTokenChar,
+                                                                                    .parseContextText = std::string(target),
+                                                                                    .what = "Request target contains whitespace or a control character"}};
+                                    }
+
+                                    request.target = target;
 
                                     lastProcessedIdx = targetVersionSP+1;
                                     requestLineState = RequestLineProcessing::Version;
@@ -156,7 +182,7 @@ namespace ninttp::internal
                                     std::string::size_type versionLength = requestLineEnd == std::string::npos ? requestLineEnd : requestLineEnd - lastProcessedIdx;
 
                                     //search until the end of constructed in case we havent found CRLF, if not until CRLF to avoid including parts of header
-                                    if(std::string_view{constructed}.substr(lastProcessedIdx, versionLength).size() > HTTPVersionLength)
+                                    if(std::string_view{constructed}.substr(lastProcessedIdx, versionLength).size() > limits::HTTPVersionLength)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::VersionTooLong,
                                                                                 .parseContextText = contextFrom(lastProcessedIdx),
                                                                                 .what = "Version length exceeds expected length of 8 bytes (HTTP/X.X)"}};
@@ -179,7 +205,7 @@ namespace ninttp::internal
                                                                                 .parseContextText = std::string(version),
                                                                                 .what = std::string("Unrecognized version from request line ") + std::string(version)}};
 
-                                    if(v.value().major > ver.major)
+                                    if(v.value().major != 1 || v.value().major > ver.major)
                                         return std::unexpected{httpParseError{ .type = httpParseErrorType::UnsupportedVersion, 
                                                                                 .parseContextText = std::string(version),
                                                                                 .what = std::string("Cannot parse request with version ") + std::string(version) + 
@@ -207,14 +233,30 @@ namespace ninttp::internal
 
                             while(true){
                                 //SYNC POINT: CRLF delimiting one header at a time
-                                if(currentHeaderEnd = constructed.find("\r\n", lastProcessedIdx); currentHeaderEnd == std::string::npos)
+                                if(currentHeaderEnd = constructed.find("\r\n", lastProcessedIdx); currentHeaderEnd == std::string::npos){
+                                    const auto pendingLength = constructed.size() - lastProcessedIdx;
+                                    if(pendingLength > limits::MaxHeaderLineLength ||
+                                        headerSectionLength + pendingLength > limits::MaxHeaderSectionLength)
+                                        return lengthLimitError("Header section exceeds configured limits");
+
                                     return httpParseStatus::NeedData;
+                                }
+
+                                const auto headerLineLength = currentHeaderEnd - lastProcessedIdx;
+                                headerSectionLength += headerLineLength + 2;
+
+                                if(headerLineLength > limits::MaxHeaderLineLength ||
+                                    headerSectionLength > limits::MaxHeaderSectionLength)
+                                    return lengthLimitError("Header section exceeds configured limits");
 
                                 //there are no remaining headers
                                 if(lastProcessedIdx == currentHeaderEnd){
                                     lastProcessedIdx += 2;
                                     break;
                                 }
+
+                                if(++headerCount > limits::MaxHeaderCount)
+                                    return lengthLimitError("Header count exceeds configured maximum");
 
                                 auto header = getHeader(currentHeaderEnd);
 
@@ -248,6 +290,9 @@ namespace ninttp::internal
                                                                                 .parseContextText = parsedHeader.value,
                                                                                 .what = "Content-Length field exceeds allowed range"}};
 
+                                    if(bodySize > limits::MaxBodyLength)
+                                        return lengthLimitError("Content-Length exceeds configured maximum body length");
+
                                     if(request.headers.contains(parsedHeader.name)){
                                         if(request.headers[parsedHeader.name] != parsedHeader.value)
                                             return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader,
@@ -257,10 +302,21 @@ namespace ninttp::internal
                                         continue;
                                     }
                                 }else if(parsedHeader.name == "transfer-encoding"){
-                                    if(parsedHeader.value != "chunked")
-                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::UnimplementedFeature,
-                                                                                    .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
-                                                                                    .what = "transfer-encoding supports chunked coding currently"}};
+                                    if(request.version.major != 1 || request.version.minor < 1)
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::UnexpectedToken,
+                                                                                .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
+                                                                                .what = "Transfer-Encoding is not valid for an HTTP/1.0 request"}};
+
+                                    if(request.headers.contains(parsedHeader.name))
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader,
+                                                                                .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
+                                                                                .what = "Transfer-Encoding header appears more than once"}};
+
+                                    auto transferEncoding = parseTransferEncoding(parsedHeader.value);
+                                    if(!transferEncoding.has_value())
+                                        return std::unexpected{std::move(transferEncoding).error()};
+
+                                    parsedHeader.value = "chunked";
                                     
                                     bodyFramingType = BodyFraming::Chunked;
                                     request.bodyFraming = RequestBodyFraming::Chunked;
@@ -279,7 +335,8 @@ namespace ninttp::internal
                                 }
                             }
 
-                            if(!request.headers.contains("host"))
+                            if(request.version.major == 1 && request.version.minor >= 1 &&
+                                !request.headers.contains("host"))
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::MissingHostHeader,
                                                                         .parseContextText = contextFrom(0),
                                                                         .what = "Expected request to contain required host header but did not find it"}};
@@ -337,8 +394,14 @@ namespace ninttp::internal
                                     if(chunkedEncodingIsCurrentlyLength){
                                         std::string_view::size_type crlf;
                                         if(crlf = arrived.find("\r\n"); crlf == std::string_view::npos){
+                                            if(arrived.size() > limits::MaxChunkLineLength)
+                                                return lengthLimitError("Chunk-size line exceeds configured maximum length");
+
                                             return httpParseStatus::NeedData;
                                         }
+
+                                        if(crlf > limits::MaxChunkLineLength)
+                                            return lengthLimitError("Chunk-size line exceeds configured maximum length");
 
                                         auto chunkLine = arrived.substr(0, crlf);
 
@@ -361,6 +424,12 @@ namespace ninttp::internal
 
                                         if(!parsedExtensions.has_value())
                                             return std::unexpected{std::move(parsedExtensions).error()};
+
+                                        if(chunkedEncodingLastLength > limits::MaxChunkLength)
+                                            return lengthLimitError("Chunk length exceeds configured maximum");
+
+                                        if(chunkedEncodingLastLength > limits::MaxBodyLength - request.body->size())
+                                            return lengthLimitError("Decoded body exceeds configured maximum length");
 
                                         chunkedEncodingRemainingBytesForConsume = chunkedEncodingLastLength;
 
@@ -414,8 +483,21 @@ namespace ninttp::internal
                             std::size_t currentHeaderEnd;
 
                             while(true){
-                                if(currentHeaderEnd = constructed.find("\r\n", lastProcessedIdx); currentHeaderEnd == std::string::npos)
+                                if(currentHeaderEnd = constructed.find("\r\n", lastProcessedIdx); currentHeaderEnd == std::string::npos){
+                                    const auto pendingLength = constructed.size() - lastProcessedIdx;
+                                    if(pendingLength > limits::MaxTrailerLineLength ||
+                                        trailerSectionLength + pendingLength > limits::MaxTrailerSectionLength)
+                                        return lengthLimitError("Trailer section exceeds configured limits");
+
                                     return httpParseStatus::NeedData;
+                                }
+
+                                const auto trailerLineLength = currentHeaderEnd - lastProcessedIdx;
+                                trailerSectionLength += trailerLineLength + 2;
+
+                                if(trailerLineLength > limits::MaxTrailerLineLength ||
+                                    trailerSectionLength > limits::MaxTrailerSectionLength)
+                                    return lengthLimitError("Trailer section exceeds configured limits");
 
                                 if(lastProcessedIdx == currentHeaderEnd){
                                     lastProcessedIdx += 2;
@@ -423,6 +505,9 @@ namespace ninttp::internal
                                     state = Processing::Finished;
                                     return httpParseStatus::Done;
                                 }
+
+                                if(++trailerCount > limits::MaxTrailerCount)
+                                    return lengthLimitError("Trailer field count exceeds configured maximum");
 
                                 auto header = getHeader(currentHeaderEnd);
 
@@ -492,6 +577,10 @@ namespace ninttp::internal
                 chunkedEncodingIsCurrentlyLength = true;
                 chunkedEncodingLastLength = 0;
                 chunkedEncodingRemainingBytesForConsume = 0;
+                headerSectionLength = 0;
+                headerCount = 0;
+                trailerSectionLength = 0;
+                trailerCount = 0;
                 leftoverBytes.clear();
                 request.reset();
             }
@@ -510,7 +599,7 @@ namespace ninttp::internal
             }
 
             constexpr std::expected<void, httpParseError> parseChunkExtensions(std::string_view extensions){
-                if(extensions.size() > MaxChunkExtensionsLength)
+                if(extensions.size() > limits::MaxChunkExtensionsLength)
                     return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
                                                             .parseContextText = std::string(extensions),
                                                             .what = "Chunk extensions exceed configured maximum length"}};
@@ -608,6 +697,34 @@ namespace ninttp::internal
                 return {};
             }
 
+            constexpr std::expected<void, httpParseError> parseTransferEncoding(std::string_view value) const{
+                auto unsupported = [value]{
+                    return std::unexpected{httpParseError{ .type = httpParseErrorType::UnimplementedFeature,
+                                                            .parseContextText = std::string(value),
+                                                            .what = "Only a single chunked transfer coding is currently supported"}};
+                };
+
+                std::size_t position = 0;
+                while(position < value.size() && (value[position] == ' ' || value[position] == '\t'))
+                    ++position;
+
+                const auto codingStart = position;
+                while(position < value.size() && utils::isTChar(value[position]))
+                    ++position;
+
+                const auto coding = value.substr(codingStart, position - codingStart);
+                if(!utils::asciiCaseInsensitiveEquals(coding, "chunked"))
+                    return unsupported();
+
+                while(position < value.size() && (value[position] == ' ' || value[position] == '\t'))
+                    ++position;
+
+                if(position != value.size())
+                    return unsupported();
+
+                return {};
+            }
+
             //dependent upon the state of constructed and lastProcessedIdx. This function just wraps the code that otherwise would be in the Header section of append,
             //so only groups code to make it clearer.
             //also advances lastProcessedIdx to the next header start
@@ -627,6 +744,9 @@ namespace ninttp::internal
                                         .parseContextText = contextLine(lastProcessedIdx, currentHeaderEnd),
                                         .what = "Header name cannot be empty"}};
 
+                if(name.size() > limits::MaxHeaderNameLength)
+                    return lengthLimitError("Header field name exceeds configured maximum length");
+
                 for(const char c : name){
                     if(!utils::isTChar(c))
                         return std::unexpected{httpParseError{ .type = httpParseErrorType::DisallowedTokenChar,
@@ -644,6 +764,9 @@ namespace ninttp::internal
                     (headers[valueEnd - 1] == ' ' || headers[valueEnd - 1] == '\t'))
                     --valueEnd;
 
+                if(valueEnd - valueStart > limits::MaxHeaderValueLength)
+                    return lengthLimitError("Header field value exceeds configured maximum length");
+
                 for(auto idx = valueStart; idx < valueEnd; ++idx){
                     const auto byte = static_cast<unsigned char>(headers[idx]);
                     if(headers[idx] != '\t' && (byte < 0x20 || byte == 0x7f))
@@ -660,6 +783,12 @@ namespace ninttp::internal
                 lastProcessedIdx = currentHeaderEnd + 2;
 
                 return header;
+            }
+
+            std::unexpected<httpParseError> lengthLimitError(std::string message) const{
+                return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                        .parseContextText = contextFrom(lastProcessedIdx),
+                                                        .what = std::move(message)}};
             }
 
             std::string contextFrom(std::string::size_type start) const{
@@ -702,13 +831,12 @@ namespace ninttp::internal
             bool chunkedEncodingIsCurrentlyLength = true;
             std::size_t chunkedEncodingLastLength = 0;
             std::size_t chunkedEncodingRemainingBytesForConsume = 0;
+            std::size_t headerSectionLength = 0;
+            std::size_t headerCount = 0;
+            std::size_t trailerSectionLength = 0;
+            std::size_t trailerCount = 0;
 
             std::string leftoverBytes;
 
-            static constexpr std::size_t MaxMethodLength = 32;
-            static constexpr std::size_t MaxRequestTargetLength = 8000;
-            static constexpr std::size_t MaxChunkExtensionsLength = 8192;
-            static constexpr std::size_t HTTPVersionLength = 8;
-            static constexpr std::size_t MaxRequestLineLength = MaxMethodLength + MaxRequestTargetLength + 4 /*2 SP & CRLF*/ + HTTPVersionLength;
     };
 } // namespace ninttp::internal

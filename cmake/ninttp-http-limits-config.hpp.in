@@ -1,0 +1,22 @@
+#pragma once
+
+#cmakedefine NINTTP_CONFIG_MaxMethodLength @MaxMethodLength@
+#cmakedefine NINTTP_CONFIG_MaxRequestTargetLength @MaxRequestTargetLength@
+#cmakedefine NINTTP_CONFIG_MaxChunkExtensionsLength @MaxChunkExtensionsLength@
+#cmakedefine NINTTP_CONFIG_HTTPVersionLength @HTTPVersionLength@
+#cmakedefine NINTTP_CONFIG_MaxRequestLineLength @MaxRequestLineLength@
+#cmakedefine NINTTP_CONFIG_MaxStatusLineLength @MaxStatusLineLength@
+#cmakedefine NINTTP_CONFIG_MaxHeaderNameLength @MaxHeaderNameLength@
+#cmakedefine NINTTP_CONFIG_MaxHeaderValueLength @MaxHeaderValueLength@
+#cmakedefine NINTTP_CONFIG_MaxHeaderLineLength @MaxHeaderLineLength@
+#cmakedefine NINTTP_CONFIG_MaxHeaderSectionLength @MaxHeaderSectionLength@
+#cmakedefine NINTTP_CONFIG_MaxHeaderCount @MaxHeaderCount@
+#cmakedefine NINTTP_CONFIG_MaxTrailerLineLength @MaxTrailerLineLength@
+#cmakedefine NINTTP_CONFIG_MaxTrailerSectionLength @MaxTrailerSectionLength@
+#cmakedefine NINTTP_CONFIG_MaxTrailerCount @MaxTrailerCount@
+#cmakedefine NINTTP_CONFIG_MaxBodyLength @MaxBodyLength@
+#cmakedefine NINTTP_CONFIG_MaxChunkLength @MaxChunkLength@
+#cmakedefine NINTTP_CONFIG_MaxChunkLineLength @MaxChunkLineLength@
+#cmakedefine NINTTP_CONFIG_MaxFieldValueLength @MaxFieldValueLength@
+#cmakedefine NINTTP_CONFIG_ReadBufferSize @ReadBufferSize@
+#cmakedefine NINTTP_CONFIG_MaxServerBacklog @MaxServerBacklog@

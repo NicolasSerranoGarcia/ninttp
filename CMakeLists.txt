@@ -43,6 +43,7 @@ include(CMakeOptions.txt)
 
 include(cmake/backend_detection.cmake)
 include(cmake/http_method_config.cmake)
+include(cmake/http_limits_config.cmake)
 
 # LIBRARY HEADERS
 
@@ -68,6 +69,7 @@ set(public_headers
     include/ninttp/http/http_server.hpp
     include/ninttp/http/http_method_config.hpp
     include/ninttp/http/types.hpp
+    include/ninttp/http/http_limits.hpp
     include/ninttp/http/internal/http_request_parser.hpp
     include/ninttp/http/internal/http_response_parser.hpp
     include/ninttp/http/internal/http_router.hpp
@@ -137,6 +139,7 @@ if(NINTTP_INSTALL)
     install(FILES
         "${ninttp_generated_include_dir}/ninttp/ninttp_platform_config.hpp"
         "${ninttp_generated_include_dir}/ninttp/ninttp_http_method_config.hpp"
+        "${ninttp_generated_include_dir}/ninttp/ninttp_http_limits_config.hpp"
         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/ninttp"
     )
 
