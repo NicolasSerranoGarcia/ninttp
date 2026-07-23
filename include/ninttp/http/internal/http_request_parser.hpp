@@ -232,6 +232,7 @@ namespace ninttp::internal
                                                                             .what = "Request contains both Content-Length and Transfer-Encoding headers"}};
                                 } else if(parsedHeader.name == "content-length"){
                                     bodyFramingType = BodyFraming::ContentLength;
+                                    request.bodyFraming = RequestBodyFraming::ContentLength;
 
                                     const char* first = parsedHeader.value.data();
                                     const char* last = first + parsedHeader.value.size();
@@ -262,6 +263,7 @@ namespace ninttp::internal
                                                                                     .what = "transfer-encoding supports chunked coding currently"}};
                                     
                                     bodyFramingType = BodyFraming::Chunked;
+                                    request.bodyFraming = RequestBodyFraming::Chunked;
                                 }
 
                                 if(parsedHeader.name == "host" && request.headers.contains("host"))
@@ -483,8 +485,14 @@ namespace ninttp::internal
                 constructed.clear();
                 lastProcessedIdx = std::string::npos;
                 bodySize = 0;
+                remaining = 0;
                 state = Processing::RequestLine;
                 requestLineState = RequestLineProcessing::Method;
+                bodyFramingType = BodyFraming::None;
+                chunkedEncodingIsCurrentlyLength = true;
+                chunkedEncodingLastLength = 0;
+                chunkedEncodingRemainingBytesForConsume = 0;
+                leftoverBytes.clear();
                 request.reset();
             }
 
@@ -496,25 +504,6 @@ namespace ninttp::internal
                 bool hasValue;
                 bool quoted;
             };
-
-            static constexpr bool isChunkExtensionWhitespace(char c) noexcept{
-                return c == ' ' || c == '\t';
-            }
-
-            static constexpr bool isQuotedText(char c) noexcept{
-                const auto byte = static_cast<unsigned char>(c);
-                return c == '\t' || c == ' ' || c == '!' ||
-                    (byte >= 0x23 && byte <= 0x5b) ||
-                    (byte >= 0x5d && byte <= 0x7e) ||
-                    byte >= 0x80;
-            }
-
-            static constexpr bool isQuotedPairValue(char c) noexcept{
-                const auto byte = static_cast<unsigned char>(c);
-                return c == '\t' || c == ' ' ||
-                    (byte >= 0x21 && byte <= 0x7e) ||
-                    byte >= 0x80;
-            }
 
             constexpr void processChunkExtension(ChunkExtensionView extension) noexcept{
                 (void)extension;
@@ -535,7 +524,7 @@ namespace ninttp::internal
                 std::size_t position = 0;
 
                 while(position < extensions.size()){
-                    while(position < extensions.size() && isChunkExtensionWhitespace(extensions[position]))
+                    while(position < extensions.size() && utils::isChunkExtensionWhitespace(extensions[position]))
                         ++position;
 
                     if(position == extensions.size() || extensions[position] != ';')
@@ -543,7 +532,7 @@ namespace ninttp::internal
 
                     ++position;
 
-                    while(position < extensions.size() && isChunkExtensionWhitespace(extensions[position]))
+                    while(position < extensions.size() && utils::isChunkExtensionWhitespace(extensions[position]))
                         ++position;
 
                     const auto nameStart = position;
@@ -556,7 +545,7 @@ namespace ninttp::internal
                     const auto name = extensions.substr(nameStart, position - nameStart);
                     const auto nameEnd = position;
 
-                    while(position < extensions.size() && isChunkExtensionWhitespace(extensions[position]))
+                    while(position < extensions.size() && utils::isChunkExtensionWhitespace(extensions[position]))
                         ++position;
 
                     bool hasValue = false;
@@ -567,7 +556,7 @@ namespace ninttp::internal
                         hasValue = true;
                         ++position;
 
-                        while(position < extensions.size() && isChunkExtensionWhitespace(extensions[position]))
+                        while(position < extensions.size() && utils::isChunkExtensionWhitespace(extensions[position]))
                             ++position;
 
                         if(position == extensions.size())
@@ -580,9 +569,9 @@ namespace ninttp::internal
                             while(position < extensions.size() && extensions[position] != '"'){
                                 if(extensions[position] == '\\'){
                                     ++position;
-                                    if(position == extensions.size() || !isQuotedPairValue(extensions[position]))
+                                    if(position == extensions.size() || !utils::isQuotedPairValue(extensions[position]))
                                         return invalidExtension();
-                                } else if(!isQuotedText(extensions[position])){
+                                } else if(!utils::isQuotedText(extensions[position])){
                                     return invalidExtension();
                                 }
 
@@ -623,39 +612,54 @@ namespace ninttp::internal
             //so only groups code to make it clearer.
             //also advances lastProcessedIdx to the next header start
             constexpr std::expected<HeaderField, httpParseError> getHeader(std::string::size_type currentHeaderEnd){
-                std::string_view headers = std::string_view{constructed};
+                const auto headers = std::string_view{constructed};
+                const auto colon = headers.find(':', lastProcessedIdx);
 
-                auto colon = headers.find(':', lastProcessedIdx);
-
-                if(colon == std::string::npos)
+                if(colon == std::string_view::npos || colon >= currentHeaderEnd)
                     return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
                                                             .parseContextText = contextLine(lastProcessedIdx, currentHeaderEnd),
                                                             .what = "Missing colon delimiter for current header"}};
 
-                internal::HeaderField header{ .name = std::string{headers.substr(lastProcessedIdx, colon - lastProcessedIdx)}};
+                const auto name = headers.substr(lastProcessedIdx, colon - lastProcessedIdx);
 
-                if(header.name.empty())
+                if(name.empty())
                     return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidHeaderFormat,
                                         .parseContextText = contextLine(lastProcessedIdx, currentHeaderEnd),
-                                        .what = "Header name contains prohibited chars specified in RFC 9112"}};
+                                        .what = "Header name cannot be empty"}};
 
-                lastProcessedIdx = colon+1;
-
-                if(lastProcessedIdx < currentHeaderEnd && constructed[lastProcessedIdx] == ' ')
-                    lastProcessedIdx++;
-
-                header.value = headers.substr(lastProcessedIdx, currentHeaderEnd - lastProcessedIdx);
-
-                for(char c : header.name){
+                for(const char c : name){
                     if(!utils::isTChar(c))
                         return std::unexpected{httpParseError{ .type = httpParseErrorType::DisallowedTokenChar,
-                                                                .parseContextText = header.name,
+                                                                .parseContextText = contextLine(lastProcessedIdx, currentHeaderEnd),
                                                                 .what = "Header name contains prohibited chars specified in RFC 9112"}};
                 }
 
+                auto valueStart = colon + 1;
+                while(valueStart < currentHeaderEnd &&
+                    (headers[valueStart] == ' ' || headers[valueStart] == '\t'))
+                    ++valueStart;
+
+                auto valueEnd = currentHeaderEnd;
+                while(valueEnd > valueStart &&
+                    (headers[valueEnd - 1] == ' ' || headers[valueEnd - 1] == '\t'))
+                    --valueEnd;
+
+                for(auto idx = valueStart; idx < valueEnd; ++idx){
+                    const auto byte = static_cast<unsigned char>(headers[idx]);
+                    if(headers[idx] != '\t' && (byte < 0x20 || byte == 0x7f))
+                        return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidHeaderFormat,
+                                                                .parseContextText = contextLine(lastProcessedIdx, currentHeaderEnd),
+                                                                .what = "Header value contains a prohibited control character"}};
+                }
+
+                internal::HeaderField header{
+                    .name = std::string{name},
+                    .value = std::string{headers.substr(valueStart, valueEnd - valueStart)}
+                };
+
                 lastProcessedIdx = currentHeaderEnd + 2;
 
-                return std::move(header);
+                return header;
             }
 
             std::string contextFrom(std::string::size_type start) const{

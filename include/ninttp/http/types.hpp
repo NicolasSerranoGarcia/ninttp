@@ -1,10 +1,14 @@
 #pragma once
 
+#include <cassert>
+#include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <vector>
 
@@ -59,6 +63,12 @@ namespace ninttp
 
     constexpr const httpVersion http_1_0(1,0);
     constexpr const httpVersion http_1_1(1,1);
+
+    enum class RequestBodyFraming{
+        None,
+        ContentLength,
+        Chunked
+    };
 
     using StatusCode = std::uint16_t;
     [[nodiscard]] constexpr std::string_view getReadableStatus(StatusCode code) noexcept{
@@ -198,6 +208,7 @@ namespace ninttp
         std::unordered_map<key, value> headers;
         std::optional<std::string> body;
         std::optional<std::vector<internal::HeaderField>> trailingHeaders;
+        RequestBodyFraming bodyFraming = RequestBodyFraming::None;
 
         void reset(){
             method.clear();
@@ -206,9 +217,51 @@ namespace ninttp
             headers.clear();
             body.reset();
             trailingHeaders.reset();
+            bodyFraming = RequestBodyFraming::None;
+        }
+
+        //The parser and request builder keep bodyFraming, lowercase framing headers, body, and trailers consistent.
+        //Callers that construct or mutate Request directly must preserve this invariant before serialization.
+        [[nodiscard]] bool hasConsistentBodyFraming() const noexcept{
+            const auto contentLength = headers.find("content-length");
+            const auto transferEncoding = headers.find("transfer-encoding");
+            const auto bodyLength = body.has_value() ? body->size() : 0;
+
+            switch(bodyFraming){
+                case RequestBodyFraming::None:
+                    return contentLength == headers.end() &&
+                        transferEncoding == headers.end() &&
+                        !trailingHeaders.has_value() &&
+                        (!body.has_value() || body->empty());
+
+                case RequestBodyFraming::ContentLength:{
+                    if(contentLength == headers.end() ||
+                        transferEncoding != headers.end() ||
+                        trailingHeaders.has_value())
+                        return false;
+
+                    std::size_t declaredLength = 0;
+                    const char* first = contentLength->second.data();
+                    const char* last = first + contentLength->second.size();
+                    const auto parsed = std::from_chars(first, last, declaredLength);
+
+                    return parsed.ec == std::errc{} &&
+                        parsed.ptr == last &&
+                        declaredLength == bodyLength;
+                }
+
+                case RequestBodyFraming::Chunked:
+                    return contentLength == headers.end() &&
+                        transferEncoding != headers.end() &&
+                        transferEncoding->second == "chunked";
+            }
+
+            return false;
         }
 
         [[nodiscard]] std::string toString() const{
+            assert(hasConsistentBodyFraming());
+
             std::string requestStr;
 
             requestStr += method;
@@ -225,10 +278,47 @@ namespace ninttp
                 requestStr += "\r\n";
             }
 
+            const auto bodyLength = body.has_value() ? body->size() : 0;
+
             requestStr += "\r\n";
 
-            if(body.has_value())
-                requestStr += body.value();
+            switch(bodyFraming){
+                case RequestBodyFraming::None:
+                    break;
+                case RequestBodyFraming::ContentLength:
+                    if(body.has_value())
+                        requestStr += body.value();
+                    break;
+                case RequestBodyFraming::Chunked:{
+                    if(bodyLength != 0){
+                        char encodedLength[sizeof(std::size_t) * 2];
+                        const auto encoded = std::to_chars(
+                            encodedLength,
+                            encodedLength + sizeof(encodedLength),
+                            bodyLength,
+                            16);
+
+                        requestStr.append(encodedLength, encoded.ptr);
+                        requestStr += "\r\n";
+                        requestStr += body.value();
+                        requestStr += "\r\n";
+                    }
+
+                    requestStr += "0\r\n";
+
+                    if(trailingHeaders.has_value()){
+                        for(const auto& trailer : trailingHeaders.value()){
+                            requestStr += trailer.name;
+                            requestStr += ": ";
+                            requestStr += trailer.value;
+                            requestStr += "\r\n";
+                        }
+                    }
+
+                    requestStr += "\r\n";
+                    break;
+                }
+            }
 
             return requestStr;
         }

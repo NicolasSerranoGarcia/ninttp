@@ -39,4 +39,23 @@ namespace ninttp::utils{
             c == '-' || c == '.' || c == '^' || c == '_' ||
             c == '`' || c == '|' || c == '~';
     }
+
+    static constexpr bool isChunkExtensionWhitespace(char c) noexcept{
+        return c == ' ' || c == '\t';
+    }
+
+    static constexpr bool isQuotedText(char c) noexcept{
+        const auto byte = static_cast<unsigned char>(c);
+        return c == '\t' || c == ' ' || c == '!' ||
+            (byte >= 0x23 && byte <= 0x5b) ||
+            (byte >= 0x5d && byte <= 0x7e) ||
+            byte >= 0x80;
+    }
+
+    static constexpr bool isQuotedPairValue(char c) noexcept{
+        const auto byte = static_cast<unsigned char>(c);
+        return c == '\t' || c == ' ' ||
+            (byte >= 0x21 && byte <= 0x7e) ||
+            byte >= 0x80;
+    }
 } // namespace ninttp::utils

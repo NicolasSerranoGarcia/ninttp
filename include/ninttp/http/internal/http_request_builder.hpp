@@ -20,6 +20,7 @@ namespace ninttp::internal{
 
             std::expected<void, NinError> setContent(const std::string& content){
                 request.body = content;
+                request.bodyFraming = RequestBodyFraming::ContentLength;
                 request.headers["content-length"] = std::to_string(content.size());
                 return {};
             }
