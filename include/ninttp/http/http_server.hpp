@@ -128,13 +128,8 @@ namespace ninttp
                     Response response;
                     result->get()(request, response);
 
-                    response.version = ver;
-                    response.statusCode = 200;
-
-                    if(response.body.has_value() && !response.body->empty()){
-                        response.headers.push_back(internal::HeaderField{ .name = std::string("Content-Length"),
-                                                                          .value = std::to_string(response.body->size())});
-                    }
+                    response.setVersion(ver);
+                    response.setStatusCode(200);
 
                     if(auto sent = streamSock.sendAll(response.toString()); !sent.has_value())
                         return std::unexpected{NinError::fromSocketError(sent.error())};
@@ -159,9 +154,9 @@ namespace ninttp
                 StreamSocket<EndpointT>& socket,
                 std::string allowedMethods)
             {
-                Response response{ .version = ver, .statusCode = 405 };
-                response.headers.push_back(internal::HeaderField{ .name = "Content-Length", .value = "0" });
-                response.headers.push_back(internal::HeaderField{ .name = "Allow", .value = std::move(allowedMethods) });
+                Response response{ver, 405};
+                response.clearContent();
+                response.addHeader("Allow", std::move(allowedMethods));
 
                 if(auto sent = socket.sendAll(response.toString()); !sent.has_value())
                     return std::unexpected{NinError::fromSocketError(sent.error())};

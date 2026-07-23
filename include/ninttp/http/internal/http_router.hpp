@@ -17,8 +17,9 @@ namespace ninttp::internal{
         public:
             std::expected<std::reference_wrapper<const HandlerT>, StatusCode>
             handleRequest(const Request& request) const{
-                const auto hostHeader = request.headers.find("host");
-                if(hostHeader == request.headers.end())
+                const auto& headers = request.getHeaders();
+                const auto hostHeader = headers.find("host");
+                if(hostHeader == headers.end())
                     return std::unexpected{400};
 
                 const auto hostIt = hosts_.find(hostHeader->second);
@@ -26,16 +27,16 @@ namespace ninttp::internal{
                     return std::unexpected{421};
                 }
 
-                if(!internal::isSupportedHttpMethod(request.method)){
+                if(!internal::isSupportedHttpMethod(request.getMethod())){
                     return std::unexpected{501};
                 }
 
-                const auto targetIt = hostIt->second.find(request.target);
+                const auto targetIt = hostIt->second.find(request.getTarget());
                 if(targetIt == hostIt->second.end()){
                     return std::unexpected{404};
                 }
 
-                const auto handlerIt = targetIt->second.find(request.method);
+                const auto handlerIt = targetIt->second.find(request.getMethod());
                 if(handlerIt == targetIt->second.end()){
                     return std::unexpected{405};
                 }
@@ -44,15 +45,16 @@ namespace ninttp::internal{
             }
 
             [[nodiscard]] std::string getAllowedMethods(const Request& request) const{
-                const auto hostHeader = request.headers.find("host");
-                if(hostHeader == request.headers.end())
+                const auto& headers = request.getHeaders();
+                const auto hostHeader = headers.find("host");
+                if(hostHeader == headers.end())
                     return {};
 
                 const auto hostIt = hosts_.find(hostHeader->second);
                 if(hostIt == hosts_.end())
                     return {};
 
-                const auto targetIt = hostIt->second.find(request.target);
+                const auto targetIt = hostIt->second.find(request.getTarget());
                 if(targetIt == hostIt->second.end())
                     return {};
 

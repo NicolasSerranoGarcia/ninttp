@@ -8,7 +8,7 @@ int serverV6(){
     try{
         httpServer<http_1_0, IPv6Endpoint> serverV6;
         if(!serverV6.registerHost("localhost") ||
-           !serverV6.registerHandler("localhost", "/", "GET", [](const Request&, Response& response){ response.body = std::string("Hello, World!"); })){
+           !serverV6.registerHandler("localhost", "/", "GET", [](const Request&, Response& response){ response.setContent("Hello, World!"); })){
             std::cerr << "failed to register HTTP route" << std::endl;
             return 1;
         }

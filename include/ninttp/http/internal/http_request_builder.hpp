@@ -14,24 +14,22 @@ namespace ninttp::internal{
     class httpRequestBuilder{
         public:
             explicit httpRequestBuilder(std::string_view method){
-                request.method = method;
-                request.version = ver;
+                request.setMethod(std::string(method));
+                request.setVersion(ver);
             }
 
             std::expected<void, NinError> setContent(const std::string& content){
-                request.body = content;
-                request.bodyFraming = RequestBodyFraming::ContentLength;
-                request.headers["content-length"] = std::to_string(content.size());
+                request.setContent(content);
                 return {};
             }
 
             std::expected<void, NinError> setHost(std::string_view host){
-                request.headers["host"] = std::string(host);
+                request.setHeader("host", std::string(host));
                 return {};
             }
 
             std::expected<void, NinError> setTarget(std::string_view target){
-                request.target = target;
+                request.setTarget(std::string(target));
                 return {};
             }
 

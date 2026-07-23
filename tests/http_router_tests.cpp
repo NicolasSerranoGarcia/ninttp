@@ -12,39 +12,39 @@ int main(){
         "/resource",
         "GET",
         [](const ninttp::Request& request, ninttp::Response& response){
-            response.body = request.target;
+            response.setContent(request.getTarget());
         }));
 
     ninttp::Request request;
-    request.headers["host"] = "example.test";
-    request.target = "/resource";
-    request.method = "GET";
+    assert(request.setHeader("host", "example.test"));
+    request.setTarget("/resource");
+    request.setMethod("GET");
 
     auto matched = router.handleRequest(request);
     assert(matched.has_value());
 
     ninttp::Response response;
     matched->get()(request, response);
-    assert(response.body == "/resource");
+    assert(response.getContent() == "/resource");
 
-    request.method = "POST";
+    request.setMethod("POST");
     auto disallowed = router.handleRequest(request);
     assert(!disallowed.has_value());
     assert(disallowed.error() == 405);
     assert(router.getAllowedMethods(request) == "GET");
 
-    request.method = "gEt";
+    request.setMethod("gEt");
     auto unsupported = router.handleRequest(request);
     assert(!unsupported.has_value());
     assert(unsupported.error() == 501);
 
-    request.method = "GET";
-    request.target = "/missing";
+    request.setMethod("GET");
+    request.setTarget("/missing");
     auto missingTarget = router.handleRequest(request);
     assert(!missingTarget.has_value());
     assert(missingTarget.error() == 404);
 
-    request.headers["host"] = "unknown.test";
+    assert(request.setHeader("host", "unknown.test"));
     auto unknownHost = router.handleRequest(request);
     assert(!unknownHost.has_value());
     assert(unknownHost.error() == 421);
