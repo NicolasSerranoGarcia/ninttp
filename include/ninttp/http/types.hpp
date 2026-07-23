@@ -197,6 +197,7 @@ namespace ninttp
 
         std::unordered_map<key, value> headers;
         std::optional<std::string> body;
+        std::optional<std::vector<internal::HeaderField>> trailingHeaders;
 
         void reset(){
             method.clear();
@@ -204,6 +205,7 @@ namespace ninttp
             version = http_1_0;
             headers.clear();
             body.reset();
+            trailingHeaders.reset();
         }
 
         [[nodiscard]] std::string toString() const{

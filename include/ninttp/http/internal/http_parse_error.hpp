@@ -26,7 +26,9 @@ namespace ninttp::internal
         IncompatibleHeaders, //400 Bad Request,
         MissingHostHeader,
         DisallowedTokenChar,
-        InvalidHeaderFormat //400 probably
+        InvalidHeaderFormat, //400 probably
+        UnimplementedFeature, //501
+        UnexpectedToken
     };
 
     struct httpParseError{

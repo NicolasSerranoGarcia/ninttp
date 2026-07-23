@@ -1,8 +1,8 @@
-- State lifetime and invariants of the sockets
-- Finish basic version of the parsers and builders
-- tests for all types of http messages: malformed, methods, combinations of options...
-- change interface to use span, modules and maybe threads, coroutines or IPC.
-- tidy headers, move into folders and reorder constructs
+- Document socket state lifetimes and invariants.
+- Finish the response parser and generalize the request/response builders beyond the current `Content-Length`-only path.
+- Add tests for malformed HTTP messages, methods, framing combinations, and routing edge cases.
+- Decide on the server concurrency model: threads, coroutines, an event loop, or external scheduling.
+- Continue header and folder cleanup as components stabilize.
 
 ## HTTP/1.x RFC compliance roadmap
 
@@ -15,21 +15,17 @@ Main references:
 ### Core message parsing
 
 - Strictly parse status lines: `HTTP-version SP status-code SP reason-phrase CRLF`.
-- Validate header field names as HTTP tokens.
+- Validate response header field names as HTTP tokens; request header names are already validated.
 - Parse header values with correct optional whitespace handling.
-- Reject or explicitly handle obsolete folded header lines.
-- Add configurable limits for:
-  - start-line length;
-  - header section size;
-  - header count;
-  - body size;
-  - request-target length.
+- Reject obsolete folded header lines explicitly in both parsers.
+- Make the existing request-line, method, and request-target limits configurable.
+- Add configurable limits for header section size, header count, body size, and response start-line length.
 
 ### Message body framing
 
 - Implement `Transfer-Encoding`, especially `chunked`.
 - Parse chunk sizes, chunk extensions, chunk data, final chunk, and trailer fields.
-- Enforce the precedence rules between `Transfer-Encoding` and `Content-Length`.
+- Enforce all `Transfer-Encoding`/`Content-Length` framing rules in both parsers; the request parser currently rejects their coexistence.
 - Support connection-close-delimited response bodies where allowed.
 - Forbid response bodies where HTTP forbids them:
   - responses to `HEAD`;
@@ -50,10 +46,11 @@ Main references:
 
 ### Request routing and targets
 
-- Require and validate the `Host` header for HTTP/1.1 requests.
+- Complete `Host` handling. Missing and duplicate fields are already rejected.
+  - Require `Host` only where the HTTP version requires it.
   - Parse the authority as a hostname, IPv4 address, or bracketed IPv6 literal, with an optional port.
-  - Reject malformed, empty, and duplicate `Host` fields with `400 Bad Request`.
-  - Normalize hostnames for matching while preserving the received authority when useful for diagnostics.
+  - Reject malformed and empty authorities with `400 Bad Request`.
+  - Normalize hostnames and default ports for matching while preserving the received authority for diagnostics.
   - Define how an explicit default authority interacts with a request made directly to an IP address.
 - Parse all HTTP/1.1 request-target forms:
   - origin-form: `/path?query`;
@@ -61,47 +58,30 @@ Main references:
   - authority-form for `CONNECT`;
   - asterisk-form for `OPTIONS *`.
 - Add URI parsing/normalization enough to route safely.
-- Add virtual-host routing support if the server can accept multiple authorities.
-  - Register authorities and associate each one with its own method/target route table.
-  - Route requests by `Host`, then target, then method.
-  - Choose and document the unknown-authority policy: default virtual host, `421 Misdirected Request`, or `404 Not Found`.
+- Complete virtual-host routing semantics; registration and `Host` -> target -> method lookup are in place.
+  - Document the current `421 Misdirected Request` policy for unknown authorities or make it configurable.
   - Keep Host routing separate from authorization; a client-controlled Host value is not proof of identity.
   - When TLS is added, validate the relationship between SNI and `Host`.
 
 ### Methods
 
-- Support the standard methods:
-  - `GET`;
-  - `HEAD`;
-  - `POST`;
-  - `PUT`;
-  - `DELETE`;
-  - `CONNECT`;
-  - `OPTIONS`;
-  - `TRACE`.
+- Add client APIs and protocol behavior for methods beyond `GET`; routing already recognizes the standard methods and configured extension methods.
 - Implement automatic method semantics where the library owns behavior:
   - `HEAD` sends headers only;
   - `OPTIONS *` works;
-  - unknown unsupported methods return `501`;
-  - known but disallowed methods return `405` with `Allow`.
 
 ### Status and error responses
 
-- Generate valid status lines and reason phrases.
-- Add built-in protocol responses for parse/framing errors:
-  - `400 Bad Request`;
+- Expand the existing parse-error mapping (`400`, `414`, and `505`) for:
   - `411 Length Required`;
   - `413 Content Too Large`;
-  - `414 URI Too Long`;
-  - `431 Request Header Fields Too Large`;
-  - `501 Not Implemented`;
-  - `505 HTTP Version Not Supported`.
+  - `431 Request Header Fields Too Large`.
 - Close the connection after unrecoverable framing errors.
 - Avoid response bodies for methods/status codes that forbid them.
 
 ### Header semantics
 
-- Add case-insensitive header lookup helpers.
+- Normalize response header names and add case-insensitive lookup helpers; request header names are already stored lowercase.
 - Add structured helpers for important fields:
   - `Host`;
   - `Connection`;
@@ -125,7 +105,7 @@ Main references:
 
 ### Client behavior
 
-- Build valid requests, including `Host`.
+- Validate client `Host` authorities and request targets; generated requests already include `Host`.
 - Parse all valid response body framing modes.
 - Add a redirect policy or explicitly leave redirects to the caller.
 - Support `Expect: 100-continue` or handle it predictably.
@@ -134,13 +114,7 @@ Main references:
 ### Server behavior
 
 - Add concurrent connection handling.
-- Extend the handler API to expose:
-  - method;
-  - target/path/query;
-  - headers;
-  - body or body stream;
-  - response headers/status/body.
-- Generate automatic protocol responses for malformed requests.
+- Expose listener backlog through server configuration with a sensible default.
 - Manage keep-alive connection lifetimes.
 - If static/file responses are added, support:
   - MIME type;

@@ -14,8 +14,6 @@
 #include "../types.hpp"
 #include "parse_utils.hpp"
 
-//TODO: move all static private utilities to a parse_utilities.hpp header file so that they can be reused in the response parser and leaves bloat off this file
-
 //Possible optimizations: why not make every field of the request a view of the original buffer? Instead of copying parts of the buffer to the return object,
 //we MOVE the constructed buffer to the request, as private member, and make getters or objects return views of the private object
 
@@ -32,6 +30,7 @@ namespace ninttp::internal
             RequestLine,
             Headers,
             Body,
+            TrailingHeaders,
             Finished
         };
 
@@ -39,6 +38,14 @@ namespace ninttp::internal
             Method,
             Target,
             Version
+        };
+        
+        enum class BodyFraming{
+            None, 
+            ContentLength,
+            Chunked,
+            ConnectionClose,
+            Tunnel
         };
 
         public:
@@ -164,23 +171,6 @@ namespace ninttp::internal
                                                                                 .parseContextText = std::string(version),
                                                                                 .what = "Request line contains extra trailing whitespace"}};
 
-                                    //about request lines: 
-                                    //Request HTTP/1.0 to HTTP/1.1-capable server:
-                                    //parse it, respond HTTP/1.1 or HTTP/1.0, depending on what the user specified on the httpServer template method.
-                                    //even if you can respond with higher, the version template mandates what does the server respond with
-
-                                    //Request HTTP/1.1 to HTTP/1.0-capable server:
-                                    //same major version, higher minor. Should process as highest HTTP/1.x you support.
-
-                                    //Request HTTP/2.0 on an HTTP/1.x text connection:
-                                    //do not silently ignore. Either reject/close or send 505 if you can still produce an HTTP/1.x response.
-
-                                    //Malformed request-line:
-                                    //400 Bad Request, generally.
-
-                                    //Valid request-line but unsupported major version:
-                                    //505 HTTP Version Not Supported.
-
                                     auto v = httpVersion::fromRequestLineVersion(version);
 
                                     //the version value is malformed from the line itself, no logic involved
@@ -203,7 +193,7 @@ namespace ninttp::internal
                                     assert(lastProcessedIdx != std::string::npos);
 
                                     std::clog << "[http.request_parser] state=RequestLine -> Headers\n";
-                                    
+
                                     state = Processing::Headers;
                                     break;
                                 } // case RequestLineProcessing::Version
@@ -234,7 +224,6 @@ namespace ninttp::internal
                                 auto parsedHeader = std::move(header).value();
                                 parsedHeader.name = utils::toLower(std::move(parsedHeader.name));
 
-                                //TODO: normalize standard headers into an enum to avoid string comparisons
                                 if((parsedHeader.name == "content-length" && request.headers.contains("transfer-encoding")) ||
                                     (parsedHeader.name == "transfer-encoding" && request.headers.contains("content-length")))
                                 {
@@ -242,6 +231,8 @@ namespace ninttp::internal
                                                                             .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
                                                                             .what = "Request contains both Content-Length and Transfer-Encoding headers"}};
                                 } else if(parsedHeader.name == "content-length"){
+                                    bodyFramingType = BodyFraming::ContentLength;
+
                                     const char* first = parsedHeader.value.data();
                                     const char* last = first + parsedHeader.value.size();
                                     auto [ptr, ec] = std::from_chars(first, last, bodySize);
@@ -264,13 +255,19 @@ namespace ninttp::internal
 
                                         continue;
                                     }
+                                }else if(parsedHeader.name == "transfer-encoding"){
+                                    if(parsedHeader.value != "chunked")
+                                        return std::unexpected{httpParseError{ .type = httpParseErrorType::UnimplementedFeature,
+                                                                                    .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
+                                                                                    .what = "transfer-encoding supports chunked coding currently"}};
+                                    
+                                    bodyFramingType = BodyFraming::Chunked;
                                 }
 
-                                if(parsedHeader.name == "host" && request.headers.contains("host")){
+                                if(parsedHeader.name == "host" && request.headers.contains("host"))
                                     return std::unexpected{httpParseError{ .type = httpParseErrorType::DuplicatedHeader,
                                                                             .parseContextText = parsedHeader.name + ": " + parsedHeader.value,
                                                                             .what = "host header appears more than once"}};
-                                }
 
                                 if(request.headers.contains(parsedHeader.name)){
                                     request.headers[parsedHeader.name].append(", ");
@@ -285,7 +282,7 @@ namespace ninttp::internal
                                                                         .parseContextText = contextFrom(0),
                                                                         .what = "Expected request to contain required host header but did not find it"}};
 
-                            if(bodySize == 0){
+                            if(bodyFramingType != BodyFraming::Chunked && bodySize == 0){
                                 leftoverBytes.append(std::string_view{constructed}.substr(lastProcessedIdx));
                                 state = Processing::Finished;
                                 return httpParseStatus::Done;
@@ -301,31 +298,143 @@ namespace ninttp::internal
                         }
 
                         case Processing::Body:{
-                            //we start at the next character of the CRLF that separates the headers and body
 
-                            auto arrived = std::string_view{constructed}.substr(lastProcessedIdx);
+                            switch(bodyFramingType){
+                                case BodyFraming::None:
+                                    break;
+                                case BodyFraming::ContentLength:{
+                                    //we start at the next character of the CRLF that separates the headers and body
 
-                            if(arrived.size() < remaining){
-                                const auto consumed = arrived.size();
-                                request.body->append(arrived);
-                                remaining -= consumed;
-                                lastProcessedIdx += consumed;
-                                return httpParseStatus::NeedData;
+                                    auto arrived = std::string_view{constructed}.substr(lastProcessedIdx);
+
+                                    if(arrived.size() < remaining){
+                                        const auto consumed = arrived.size();
+                                        request.body->append(arrived);
+                                        remaining -= consumed;
+                                        lastProcessedIdx += consumed;
+                                        return httpParseStatus::NeedData;
+                                    }
+
+                                    const auto consumed = remaining;
+                                    request.body->append(arrived.substr(0, consumed));
+                                    leftoverBytes.append(arrived.substr(consumed));
+                                    remaining = 0;
+
+                                    lastProcessedIdx += consumed;
+
+                                    std::clog << "[http.request_parser] state=Body -> Finished\n";
+
+                                    state = Processing::Finished;
+                                    return httpParseStatus::Done;
+
+                                    break;
+                                }
+                                case BodyFraming::Chunked:{
+                                    auto arrived = std::string_view{constructed}.substr(lastProcessedIdx);
+
+                                    if(chunkedEncodingIsCurrentlyLength){
+                                        std::string_view::size_type crlf;
+                                        if(crlf = arrived.find("\r\n"); crlf == std::string_view::npos){
+                                            return httpParseStatus::NeedData;
+                                        }
+
+                                        auto chunkLine = arrived.substr(0, crlf);
+
+                                        const char* first = chunkLine.data();
+                                        const char* last = first + chunkLine.size();
+                                        auto [ptr, ec] = std::from_chars(first, last, chunkedEncodingLastLength, 16);
+
+                                        if(ec == std::errc::invalid_argument)
+                                            return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                                                    .parseContextText = std::string(chunkLine),
+                                                                                    .what = "Expected valid hexadecimal chunk length"}};
+
+                                        if(ec == std::errc::result_out_of_range)
+                                            return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                                                    .parseContextText = std::string(chunkLine),
+                                                                                    .what = "Chunk length exceeds allowed range"}};
+
+                                        auto extensions = std::string_view{ptr, static_cast<std::size_t>(last - ptr)};
+                                        auto parsedExtensions = parseChunkExtensions(extensions);
+
+                                        if(!parsedExtensions.has_value())
+                                            return std::unexpected{std::move(parsedExtensions).error()};
+
+                                        chunkedEncodingRemainingBytesForConsume = chunkedEncodingLastLength;
+
+                                        if(chunkedEncodingLastLength == 0){
+                                            state = Processing::TrailingHeaders;
+                                        }
+
+                                        lastProcessedIdx += crlf+2;
+                                        chunkedEncodingIsCurrentlyLength = false;
+                                    } else{
+
+                                        if(chunkedEncodingRemainingBytesForConsume > arrived.size()){
+                                            request.body->append(arrived.substr(0, arrived.size()));
+                                            chunkedEncodingRemainingBytesForConsume -= arrived.size();
+                                            lastProcessedIdx += arrived.size();
+                                            return httpParseStatus::NeedData;
+                                        }
+
+                                        request.body->append(arrived.substr(0, chunkedEncodingRemainingBytesForConsume));
+                                        lastProcessedIdx += chunkedEncodingRemainingBytesForConsume;
+                                        auto remaining = arrived.substr(chunkedEncodingRemainingBytesForConsume);
+                                        chunkedEncodingRemainingBytesForConsume = 0;
+
+                                        std::string_view::size_type crlf;
+
+                                        if(crlf = remaining.find("\r\n"); crlf == std::string_view::npos){
+                                            return httpParseStatus::NeedData;
+                                        }
+
+                                        if(crlf != 0){
+                                            return std::unexpected{httpParseError{ .type = httpParseErrorType::UnexpectedToken,
+                                                                                    .parseContextText = std::string(remaining),
+                                                                                    .what = "Expected CRLF to end chunk delimited by length, got more data"}};
+                                        }
+
+                                        lastProcessedIdx += 2;
+                                        chunkedEncodingIsCurrentlyLength = true;
+                                    }
+
+                                    break;
+                                }
+                                case BodyFraming::ConnectionClose:
+                                case BodyFraming::Tunnel:
+                                default:
+                                    break;
                             }
-
-                            const auto consumed = remaining;
-                            request.body->append(arrived.substr(0, consumed));
-                            leftoverBytes.append(arrived.substr(consumed));
-                            remaining = 0;
-
-                            lastProcessedIdx += consumed;
-
-                            std::clog << "[http.request_parser] state=Body -> Finished\n";
-
-                            state = Processing::Finished;
-                            return httpParseStatus::Done;
-
                             break;
+                        }
+
+                        case Processing::TrailingHeaders:{
+                            std::size_t currentHeaderEnd;
+
+                            while(true){
+                                if(currentHeaderEnd = constructed.find("\r\n", lastProcessedIdx); currentHeaderEnd == std::string::npos)
+                                    return httpParseStatus::NeedData;
+
+                                if(lastProcessedIdx == currentHeaderEnd){
+                                    lastProcessedIdx += 2;
+                                    leftoverBytes.append(std::string_view{constructed}.substr(lastProcessedIdx));
+                                    state = Processing::Finished;
+                                    return httpParseStatus::Done;
+                                }
+
+                                auto header = getHeader(currentHeaderEnd);
+
+                                if(!header.has_value())
+                                    return std::unexpected{std::move(header).error()};
+
+                                auto parsedHeader = std::move(header).value();
+                                parsedHeader.name = utils::toLower(std::move(parsedHeader.name));
+
+                                if(!request.trailingHeaders.has_value())
+                                    request.trailingHeaders.emplace();
+
+                                request.trailingHeaders->push_back(std::move(parsedHeader));
+                            }
                         }
 
                         default:
@@ -381,6 +490,135 @@ namespace ninttp::internal
 
         private:
 
+            struct ChunkExtensionView{
+                std::string_view name;
+                std::string_view rawValue;
+                bool hasValue;
+                bool quoted;
+            };
+
+            static constexpr bool isChunkExtensionWhitespace(char c) noexcept{
+                return c == ' ' || c == '\t';
+            }
+
+            static constexpr bool isQuotedText(char c) noexcept{
+                const auto byte = static_cast<unsigned char>(c);
+                return c == '\t' || c == ' ' || c == '!' ||
+                    (byte >= 0x23 && byte <= 0x5b) ||
+                    (byte >= 0x5d && byte <= 0x7e) ||
+                    byte >= 0x80;
+            }
+
+            static constexpr bool isQuotedPairValue(char c) noexcept{
+                const auto byte = static_cast<unsigned char>(c);
+                return c == '\t' || c == ' ' ||
+                    (byte >= 0x21 && byte <= 0x7e) ||
+                    byte >= 0x80;
+            }
+
+            constexpr void processChunkExtension(ChunkExtensionView extension) noexcept{
+                (void)extension;
+            }
+
+            constexpr std::expected<void, httpParseError> parseChunkExtensions(std::string_view extensions){
+                if(extensions.size() > MaxChunkExtensionsLength)
+                    return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
+                                                            .parseContextText = std::string(extensions),
+                                                            .what = "Chunk extensions exceed configured maximum length"}};
+
+                auto invalidExtension = [extensions]{
+                    return std::unexpected{httpParseError{ .type = httpParseErrorType::UnrecognizedToken,
+                                                            .parseContextText = std::string(extensions),
+                                                            .what = "Invalid chunk extension syntax"}};
+                };
+
+                std::size_t position = 0;
+
+                while(position < extensions.size()){
+                    while(position < extensions.size() && isChunkExtensionWhitespace(extensions[position]))
+                        ++position;
+
+                    if(position == extensions.size() || extensions[position] != ';')
+                        return invalidExtension();
+
+                    ++position;
+
+                    while(position < extensions.size() && isChunkExtensionWhitespace(extensions[position]))
+                        ++position;
+
+                    const auto nameStart = position;
+                    while(position < extensions.size() && utils::isTChar(extensions[position]))
+                        ++position;
+
+                    if(position == nameStart)
+                        return invalidExtension();
+
+                    const auto name = extensions.substr(nameStart, position - nameStart);
+                    const auto nameEnd = position;
+
+                    while(position < extensions.size() && isChunkExtensionWhitespace(extensions[position]))
+                        ++position;
+
+                    bool hasValue = false;
+                    bool quoted = false;
+                    std::string_view value;
+
+                    if(position < extensions.size() && extensions[position] == '='){
+                        hasValue = true;
+                        ++position;
+
+                        while(position < extensions.size() && isChunkExtensionWhitespace(extensions[position]))
+                            ++position;
+
+                        if(position == extensions.size())
+                            return invalidExtension();
+
+                        if(extensions[position] == '"'){
+                            quoted = true;
+                            const auto valueStart = ++position;
+
+                            while(position < extensions.size() && extensions[position] != '"'){
+                                if(extensions[position] == '\\'){
+                                    ++position;
+                                    if(position == extensions.size() || !isQuotedPairValue(extensions[position]))
+                                        return invalidExtension();
+                                } else if(!isQuotedText(extensions[position])){
+                                    return invalidExtension();
+                                }
+
+                                ++position;
+                            }
+
+                            if(position == extensions.size())
+                                return invalidExtension();
+
+                            value = extensions.substr(valueStart, position - valueStart);
+                            ++position;
+                        } else{
+                            const auto valueStart = position;
+                            while(position < extensions.size() && utils::isTChar(extensions[position]))
+                                ++position;
+
+                            if(position == valueStart)
+                                return invalidExtension();
+
+                            value = extensions.substr(valueStart, position - valueStart);
+                        }
+                    } else if(position == extensions.size() && position != nameEnd){
+                        return invalidExtension();
+                    }
+
+                    processChunkExtension(ChunkExtensionView{
+                        .name = name,
+                        .rawValue = value,
+                        .hasValue = hasValue,
+                        .quoted = quoted
+                    });
+                }
+
+                return {};
+            }
+
             //dependent upon the state of constructed and lastProcessedIdx. This function just wraps the code that otherwise would be in the Header section of append,
             //so only groups code to make it clearer.
             //also advances lastProcessedIdx to the next header start
@@ -390,7 +628,6 @@ namespace ninttp::internal
                 auto colon = headers.find(':', lastProcessedIdx);
 
                 if(colon == std::string::npos)
-                    //TODO: use the context atribute for aditional info, giving probably the whole header line
                     return std::unexpected{httpParseError{ .type = httpParseErrorType::ExpectedMissingToken, 
                                                             .parseContextText = contextLine(lastProcessedIdx, currentHeaderEnd),
                                                             .what = "Missing colon delimiter for current header"}};
@@ -403,9 +640,8 @@ namespace ninttp::internal
                                         .what = "Header name contains prohibited chars specified in RFC 9112"}};
 
                 lastProcessedIdx = colon+1;
-                assert(lastProcessedIdx < currentHeaderEnd);
 
-                if(constructed[lastProcessedIdx] == ' ')
+                if(lastProcessedIdx < currentHeaderEnd && constructed[lastProcessedIdx] == ' ')
                     lastProcessedIdx++;
 
                 header.value = headers.substr(lastProcessedIdx, currentHeaderEnd - lastProcessedIdx);
@@ -456,11 +692,18 @@ namespace ninttp::internal
             std::size_t remaining;
             Processing state = Processing::RequestLine;
             RequestLineProcessing requestLineState = RequestLineProcessing::Method;
+            BodyFraming bodyFramingType = BodyFraming::None;
+
+            //transfer encoding delimits stream by first sending a length, followed by a crlf and then the inmediate contents delimited by that ammount
+            bool chunkedEncodingIsCurrentlyLength = true;
+            std::size_t chunkedEncodingLastLength = 0;
+            std::size_t chunkedEncodingRemainingBytesForConsume = 0;
 
             std::string leftoverBytes;
 
             static constexpr std::size_t MaxMethodLength = 32;
             static constexpr std::size_t MaxRequestTargetLength = 8000;
+            static constexpr std::size_t MaxChunkExtensionsLength = 8192;
             static constexpr std::size_t HTTPVersionLength = 8;
             static constexpr std::size_t MaxRequestLineLength = MaxMethodLength + MaxRequestTargetLength + 4 /*2 SP & CRLF*/ + HTTPVersionLength;
     };
