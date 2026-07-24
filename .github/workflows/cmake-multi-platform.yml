@@ -17,35 +17,35 @@ jobs:
       fail-fast: false
 
       # Set up a matrix to run the following 3 configurations:
-      # 1. <Windows, Release, latest MSVC compiler toolchain on the default runner image, default generator>
-      # 2. <Linux, Release, latest GCC compiler toolchain on the default runner image, default generator>
-      # 3. <Linux, Release, latest Clang compiler toolchain on the default runner image, default generator>
+      # 1. <Windows 2022, Release, MSVC, default generator>
+      # 2. <Ubuntu 24.04, Release, GCC 14 with libstdc++ 14>
+      # 3. <Ubuntu 24.04, Release, Clang 18 with libc++ 18>
       #
       # To add more build types (Release, Debug, RelWithDebInfo, etc.) customize the build_type list.
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        build_type: [Release]
-        c_compiler: [gcc, clang, cl]
         include:
-          - os: windows-latest
+          - os: windows-2022
+            build_type: Release
             c_compiler: cl
             cpp_compiler: cl
-          - os: ubuntu-latest
-            c_compiler: gcc
-            cpp_compiler: g++
-          - os: ubuntu-latest
-            c_compiler: clang
-            cpp_compiler: clang++
-        exclude:
-          - os: windows-latest
-            c_compiler: gcc
-          - os: windows-latest
-            c_compiler: clang
-          - os: ubuntu-latest
-            c_compiler: cl
+            cxx_flags: ""
+          - os: ubuntu-24.04
+            build_type: Release
+            c_compiler: gcc-14
+            cpp_compiler: g++-14
+            cxx_flags: ""
+          - os: ubuntu-24.04
+            build_type: Release
+            c_compiler: clang-18
+            cpp_compiler: clang++-18
+            cxx_flags: "-stdlib=libc++"
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Install libc++ 18
+      if: matrix.cpp_compiler == 'clang++-18'
+      run: sudo apt-get update && sudo apt-get install --yes libc++-18-dev libc++abi-18-dev
 
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
@@ -61,6 +61,7 @@ jobs:
         cmake -B ${{ steps.strings.outputs.build-output-dir }}
         -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
         -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+        -DCMAKE_CXX_FLAGS="${{ matrix.cxx_flags }}"
         -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         -DNINTTP_BUILD_TESTS=ON
         -S ${{ github.workspace }}
