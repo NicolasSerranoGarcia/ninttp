@@ -401,7 +401,7 @@ namespace ninttp::internal
              * @return Number of bytes sent, or WSAEMSGSIZE/native WSA error on failure.
              */
             static std::expected<std::size_t, ErrorT> send(const SocketT& s, std::span<const char> data) noexcept{
-                if(data.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+                if(data.size() > static_cast<std::size_t>((std::numeric_limits<int>::max)()))
                     return std::unexpected{WSAEMSGSIZE};
 
                 const int sent = ::send(s, data.data(), static_cast<int>(data.size()), 0);
@@ -417,7 +417,7 @@ namespace ninttp::internal
              * @return Number of bytes received, or WSAEMSGSIZE/native WSA error on failure.
              */
             static std::expected<std::size_t, ErrorT> receive(const SocketT& s, std::span<char> buffer) noexcept{
-                if(buffer.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+                if(buffer.size() > static_cast<std::size_t>((std::numeric_limits<int>::max)()))
                     return std::unexpected{WSAEMSGSIZE};
 
                 const int received = ::recv(s, buffer.data(), static_cast<int>(buffer.size()), 0);

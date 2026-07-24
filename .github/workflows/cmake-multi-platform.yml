@@ -28,17 +28,17 @@ jobs:
             build_type: Release
             c_compiler: cl
             cpp_compiler: cl
-            cxx_flags: ""
+            cmake_cxx_flags_arg: ""
           - os: ubuntu-24.04
             build_type: Release
             c_compiler: gcc-14
             cpp_compiler: g++-14
-            cxx_flags: ""
+            cmake_cxx_flags_arg: ""
           - os: ubuntu-24.04
             build_type: Release
             c_compiler: clang-18
             cpp_compiler: clang++-18
-            cxx_flags: "-stdlib=libc++"
+            cmake_cxx_flags_arg: "-DCMAKE_CXX_FLAGS=-stdlib=libc++"
 
     steps:
     - uses: actions/checkout@v4
@@ -61,7 +61,7 @@ jobs:
         cmake -B ${{ steps.strings.outputs.build-output-dir }}
         -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
         -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
-        -DCMAKE_CXX_FLAGS="${{ matrix.cxx_flags }}"
+        ${{ matrix.cmake_cxx_flags_arg }}
         -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         -DNINTTP_BUILD_TESTS=ON
         -S ${{ github.workspace }}
