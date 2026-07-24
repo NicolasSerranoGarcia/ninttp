@@ -1,5 +1,4 @@
 - Document socket state lifetimes and invariants.
-- Finish the response parser and generalize the request/response builders beyond the current `Content-Length`-only path.
 - Add tests for malformed HTTP messages, methods, framing combinations, and routing edge cases.
 - Decide on the server concurrency model: threads, coroutines, an event loop, or external scheduling.
 - Continue header and folder cleanup as components stabilize.
@@ -11,29 +10,6 @@ Main references:
 - RFC 9110: HTTP Semantics
 - RFC 9111: HTTP Caching
 - RFC 9112: HTTP/1.1
-
-### Core message parsing
-
-- Strictly parse status lines: `HTTP-version SP status-code SP reason-phrase CRLF`.
-- Validate response header field names as HTTP tokens; request header names are already validated.
-- Parse header values with correct optional whitespace handling.
-- Reject obsolete folded header lines explicitly in both parsers.
-- Make the existing request-line, method, and request-target limits configurable.
-- Add configurable limits for header section size, header count, body size, and response start-line length.
-
-### Message body framing
-
-- Implement `Transfer-Encoding`, especially `chunked`.
-- Parse chunk sizes, chunk extensions, chunk data, final chunk, and trailer fields.
-- Enforce all `Transfer-Encoding`/`Content-Length` framing rules in both parsers; the request parser currently rejects their coexistence.
-- Support connection-close-delimited response bodies where allowed.
-- Forbid response bodies where HTTP forbids them:
-  - responses to `HEAD`;
-  - `1xx`;
-  - `204`;
-  - `304`;
-  - successful `CONNECT`.
-- Handle request bodies for methods beyond `GET`.
 
 ### HTTP/1.1 connection behavior
 
@@ -47,7 +23,6 @@ Main references:
 ### Request routing and targets
 
 - Complete `Host` handling. Missing and duplicate fields are already rejected.
-  - Require `Host` only where the HTTP version requires it.
   - Parse the authority as a hostname, IPv4 address, or bracketed IPv6 literal, with an optional port.
   - Reject malformed and empty authorities with `400 Bad Request`.
   - Normalize hostnames and default ports for matching while preserving the received authority for diagnostics.
@@ -81,7 +56,7 @@ Main references:
 
 ### Header semantics
 
-- Normalize response header names and add case-insensitive lookup helpers; request header names are already stored lowercase.
+- Add case-insensitive header lookup helpers.
 - Add structured helpers for important fields:
   - `Host`;
   - `Connection`;
@@ -101,12 +76,10 @@ Main references:
   - `Authorization`.
 - Handle hop-by-hop headers correctly if proxy support is added.
 - Generate `Date` on origin server responses when required/recommended.
-- Generate either valid `Content-Length` or valid chunked encoding for outgoing bodies.
 
 ### Client behavior
 
 - Validate client `Host` authorities and request targets; generated requests already include `Host`.
-- Parse all valid response body framing modes.
 - Add a redirect policy or explicitly leave redirects to the caller.
 - Support `Expect: 100-continue` or handle it predictably.
 - Add TLS support before claiming `https` support.
@@ -114,7 +87,6 @@ Main references:
 ### Server behavior
 
 - Add concurrent connection handling.
-- Expose listener backlog through server configuration with a sensible default.
 - Manage keep-alive connection lifetimes.
 - If static/file responses are added, support:
   - MIME type;
