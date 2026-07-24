@@ -1,9 +1,9 @@
-#include <cassert>
 #include <string>
 #include <string_view>
 
 #include <ninttp/http/internal/http_response_parser.hpp>
 
+#include "test_check.hpp"
 using ninttp::ResponseBodyFraming;
 using ninttp::http_1_1;
 using ninttp::internal::httpParseErrorType;
@@ -35,14 +35,14 @@ int main(){
             "\r\n"
             "hello");
 
-        assert(result == httpParseStatus::Done);
+        NINTTP_CHECK(result == httpParseStatus::Done);
         auto response = parser.getResponse();
-        assert(response.getStatusCode() == 200);
-        assert(response.getBodyFraming() == ResponseBodyFraming::ContentLength);
-        assert(response.getContent() == "hello");
-        assert(response.getHeaders().size() == 2);
-        assert(response.getHeaders()[1].name == "x-test");
-        assert(response.getHeaders()[1].value == "value");
+        NINTTP_CHECK(response.getStatusCode() == 200);
+        NINTTP_CHECK(response.getBodyFraming() == ResponseBodyFraming::ContentLength);
+        NINTTP_CHECK(response.getContent() == "hello");
+        NINTTP_CHECK(response.getHeaders().size() == 2);
+        NINTTP_CHECK(response.getHeaders()[1].name == "x-test");
+        NINTTP_CHECK(response.getHeaders()[1].value == "value");
     }
 
     {
@@ -58,15 +58,15 @@ int main(){
             "Checksum: accepted\r\n"
             "\r\n");
 
-        assert(result == httpParseStatus::Done);
+        NINTTP_CHECK(result == httpParseStatus::Done);
 
         auto response = parser.getResponse();
-        assert(response.getBodyFraming() == ResponseBodyFraming::Chunked);
-        assert(response.getContent() == "test");
-        assert(response.getTrailingHeaders().has_value());
-        assert(response.getTrailingHeaders()->size() == 1);
-        assert(response.getTrailingHeaders()->front().name == "checksum");
-        assert(response.getTrailingHeaders()->front().value == "accepted");
+        NINTTP_CHECK(response.getBodyFraming() == ResponseBodyFraming::Chunked);
+        NINTTP_CHECK(response.getContent() == "test");
+        NINTTP_CHECK(response.getTrailingHeaders().has_value());
+        NINTTP_CHECK(response.getTrailingHeaders()->size() == 1);
+        NINTTP_CHECK(response.getTrailingHeaders()->front().name == "checksum");
+        NINTTP_CHECK(response.getTrailingHeaders()->front().value == "accepted");
     }
 
     {
@@ -77,13 +77,13 @@ int main(){
             "\r\n"
             "close-delimited");
 
-        assert(result == httpParseStatus::NeedData);
+        NINTTP_CHECK(result == httpParseStatus::NeedData);
         result = parser.finish();
-        assert(result == httpParseStatus::Done);
+        NINTTP_CHECK(result == httpParseStatus::Done);
 
         auto response = parser.getResponse();
-        assert(response.getBodyFraming() == ResponseBodyFraming::ConnectionClose);
-        assert(response.getContent() == "close-delimited");
+        NINTTP_CHECK(response.getBodyFraming() == ResponseBodyFraming::ConnectionClose);
+        NINTTP_CHECK(response.getContent() == "close-delimited");
     }
 
     {
@@ -94,11 +94,11 @@ int main(){
             "\r\n"
             "NEXT");
 
-        assert(result == httpParseStatus::Done);
-        assert(parser.getLeftoverBytes() == "NEXT");
+        NINTTP_CHECK(result == httpParseStatus::Done);
+        NINTTP_CHECK(parser.getLeftoverBytes() == "NEXT");
         const auto response = parser.getResponse();
-        assert(response.getBodyFraming() == ResponseBodyFraming::None);
-        assert(!response.getContent().has_value());
+        NINTTP_CHECK(response.getBodyFraming() == ResponseBodyFraming::None);
+        NINTTP_CHECK(!response.getContent().has_value());
     }
 
     {
@@ -108,9 +108,9 @@ int main(){
             "\r\n"
             "tunnel bytes");
 
-        assert(result == httpParseStatus::Done);
-        assert(parser.getLeftoverBytes() == "tunnel bytes");
-        assert(parser.getResponse().getBodyFraming() == ResponseBodyFraming::Tunnel);
+        NINTTP_CHECK(result == httpParseStatus::Done);
+        NINTTP_CHECK(parser.getLeftoverBytes() == "tunnel bytes");
+        NINTTP_CHECK(parser.getResponse().getBodyFraming() == ResponseBodyFraming::Tunnel);
     }
 
     {
@@ -122,9 +122,9 @@ int main(){
             "\r\n"
             "upgraded bytes");
 
-        assert(result == httpParseStatus::Done);
-        assert(parser.getLeftoverBytes() == "upgraded bytes");
-        assert(parser.getResponse().getBodyFraming() == ResponseBodyFraming::Tunnel);
+        NINTTP_CHECK(result == httpParseStatus::Done);
+        NINTTP_CHECK(parser.getLeftoverBytes() == "upgraded bytes");
+        NINTTP_CHECK(parser.getResponse().getBodyFraming() == ResponseBodyFraming::Tunnel);
     }
 
     {
@@ -135,9 +135,9 @@ int main(){
             "\r\n"
             "NEXT");
 
-        assert(result == httpParseStatus::Done);
-        assert(parser.getLeftoverBytes() == "NEXT");
-        assert(parser.getResponse().getBodyFraming() == ResponseBodyFraming::None);
+        NINTTP_CHECK(result == httpParseStatus::Done);
+        NINTTP_CHECK(parser.getLeftoverBytes() == "NEXT");
+        NINTTP_CHECK(parser.getResponse().getBodyFraming() == ResponseBodyFraming::None);
     }
 
     {
@@ -147,8 +147,8 @@ int main(){
             "Transfer-Encoding: chunked\r\n"
             "\r\n");
 
-        assert(!result.has_value());
-        assert(result.error().type == httpParseErrorType::UnexpectedToken);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == httpParseErrorType::UnexpectedToken);
     }
 
     {
@@ -159,8 +159,8 @@ int main(){
             "Transfer-Encoding: chunked\r\n"
             "\r\n");
 
-        assert(!result.has_value());
-        assert(result.error().type == httpParseErrorType::IncompatibleHeaders);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == httpParseErrorType::IncompatibleHeaders);
     }
 
     {
@@ -171,10 +171,10 @@ int main(){
             "\r\n"
             "abc");
 
-        assert(result == httpParseStatus::NeedData);
+        NINTTP_CHECK(result == httpParseStatus::NeedData);
         result = parser.finish();
-        assert(!result.has_value());
-        assert(result.error().type == httpParseErrorType::ExpectedMissingToken);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == httpParseErrorType::ExpectedMissingToken);
     }
 
     {
@@ -185,25 +185,25 @@ int main(){
             "Content-Length: 5\r\n"
             "\r\n");
 
-        assert(!result.has_value());
-        assert(result.error().type == httpParseErrorType::DuplicatedHeader);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == httpParseErrorType::DuplicatedHeader);
     }
 
     {
         ninttp::Response response;
-        assert(response.setVersion(http_1_1));
+        NINTTP_CHECK(response.setVersion(http_1_1));
         response.setStatusCode(200);
-        assert(!response.setContent("not an HTTP body", ResponseBodyFraming::Tunnel));
-        assert(response.setContent("hello", ResponseBodyFraming::Chunked));
-        assert(response.addTrailingHeader("Checksum", "accepted"));
+        NINTTP_CHECK(!response.setContent("not an HTTP body", ResponseBodyFraming::Tunnel));
+        NINTTP_CHECK(response.setContent("hello", ResponseBodyFraming::Chunked));
+        NINTTP_CHECK(response.addTrailingHeader("Checksum", "accepted"));
 
         httpResponseParser<http_1_1> parser{"GET"};
         const auto result = parser.append(response.toString());
-        assert(result == httpParseStatus::Done);
+        NINTTP_CHECK(result == httpParseStatus::Done);
 
         auto parsed = parser.getResponse();
-        assert(parsed.getContent() == "hello");
-        assert(parsed.getTrailingHeaders().has_value());
-        assert(parsed.getTrailingHeaders()->front().value == "accepted");
+        NINTTP_CHECK(parsed.getContent() == "hello");
+        NINTTP_CHECK(parsed.getTrailingHeaders().has_value());
+        NINTTP_CHECK(parsed.getTrailingHeaders()->front().value == "accepted");
     }
 }

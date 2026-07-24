@@ -1,7 +1,8 @@
-#include <cassert>
 #include <string>
 
 #include <ninttp/http/internal/http_request_parser.hpp>
+
+#include "test_check.hpp"
 
 using ninttp::http_1_1;
 using ninttp::http_1_0;
@@ -20,28 +21,28 @@ int main(){
             "4\r\ntest\r\n"
             "0\r\n\r\n");
 
-        assert(result == httpParseStatus::Done);
-        assert(parser.getRequest().getContent() == "test");
+        NINTTP_CHECK(result == httpParseStatus::Done);
+        NINTTP_CHECK(parser.getRequest().getContent() == "test");
     }
 
     {
         httpRequestParser<http_1_1> parser;
         const auto result = parser.append("GET / HTTP/1.0\r\n\r\n");
-        assert(result == httpParseStatus::Done);
+        NINTTP_CHECK(result == httpParseStatus::Done);
     }
 
     {
         httpRequestParser<http_1_1> parser;
         const auto result = parser.append("GET / HTTP/1.1\r\n\r\n");
-        assert(!result.has_value());
-        assert(result.error().type == httpParseErrorType::MissingHostHeader);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == httpParseErrorType::MissingHostHeader);
     }
 
     {
         httpRequestParser<http_1_1> parser;
         const auto result = parser.append("GET / HTTP/0.9\r\n\r\n");
-        assert(!result.has_value());
-        assert(result.error().type == httpParseErrorType::UnsupportedVersion);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == httpParseErrorType::UnsupportedVersion);
     }
 
     {
@@ -50,14 +51,14 @@ int main(){
             "POST / HTTP/1.0\r\n"
             "Transfer-Encoding: chunked\r\n"
             "\r\n");
-        assert(!result.has_value());
+        NINTTP_CHECK(!result.has_value());
     }
 
     {
         httpRequestParser<http_1_1> parser;
         const auto result = parser.append("GET /\tbad HTTP/1.1\r\nHost: example.test\r\n\r\n");
-        assert(!result.has_value());
-        assert(result.error().type == httpParseErrorType::DisallowedTokenChar);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == httpParseErrorType::DisallowedTokenChar);
     }
 
     {
@@ -70,27 +71,27 @@ int main(){
         request.append(9000, 'x');
 
         const auto result = parser.append(request);
-        assert(result == httpParseStatus::Done);
-        assert(parser.getRequest().getContent()->size() == 9000);
+        NINTTP_CHECK(result == httpParseStatus::Done);
+        NINTTP_CHECK(parser.getRequest().getContent()->size() == 9000);
     }
 
     {
         ninttp::Request request;
-        assert(!request.setContent("test", ninttp::RequestBodyFraming::Chunked));
-        assert(request.setVersion(http_1_1));
-        assert(!request.hasConsistentBodyFraming());
-        assert(request.setHeader("host", "example.test"));
-        assert(request.setContent("test", ninttp::RequestBodyFraming::Chunked));
-        assert(request.hasConsistentBodyFraming());
-        assert(!request.setVersion(http_1_0));
-        assert(request.getVersion().minor == 1);
+        NINTTP_CHECK(!request.setContent("test", ninttp::RequestBodyFraming::Chunked));
+        NINTTP_CHECK(request.setVersion(http_1_1));
+        NINTTP_CHECK(!request.hasConsistentBodyFraming());
+        NINTTP_CHECK(request.setHeader("host", "example.test"));
+        NINTTP_CHECK(request.setContent("test", ninttp::RequestBodyFraming::Chunked));
+        NINTTP_CHECK(request.hasConsistentBodyFraming());
+        NINTTP_CHECK(!request.setVersion(http_1_0));
+        NINTTP_CHECK(request.getVersion().minor == 1);
     }
 
     {
         ninttp::Request request;
-        assert(!request.setVersion(ninttp::httpVersion{2, 0}));
+        NINTTP_CHECK(!request.setVersion(ninttp::httpVersion{2, 0}));
 
         ninttp::Response response;
-        assert(!response.setVersion(ninttp::httpVersion{2, 0}));
+        NINTTP_CHECK(!response.setVersion(ninttp::httpVersion{2, 0}));
     }
 }

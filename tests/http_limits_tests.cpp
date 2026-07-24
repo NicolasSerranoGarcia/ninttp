@@ -1,9 +1,8 @@
-#include <cassert>
-
 #include <ninttp/http/http_limits.hpp>
 #include <ninttp/http/internal/http_request_parser.hpp>
 #include <ninttp/http/internal/http_response_parser.hpp>
 
+#include "test_check.hpp"
 static_assert(ninttp::limits::MaxMethodLength == 17);
 static_assert(ninttp::limits::MaxBodyLength == 8);
 static_assert(ninttp::limits::MaxHeaderCount == 1);
@@ -21,8 +20,8 @@ int main(){
             "Accept: */*\r\n"
             "\r\n");
 
-        assert(!result.has_value());
-        assert(result.error().type == ninttp::internal::httpParseErrorType::InvalidLength);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == ninttp::internal::httpParseErrorType::InvalidLength);
     }
 
     {
@@ -34,8 +33,8 @@ int main(){
             "\r\n"
             "123456789");
 
-        assert(!result.has_value());
-        assert(result.error().type == ninttp::internal::httpParseErrorType::InvalidLength);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == ninttp::internal::httpParseErrorType::InvalidLength);
     }
 
     {
@@ -46,7 +45,7 @@ int main(){
             "\r\n"
             "123456789");
 
-        assert(!result.has_value());
-        assert(result.error().type == ninttp::internal::httpParseErrorType::InvalidLength);
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == ninttp::internal::httpParseErrorType::InvalidLength);
     }
 }
