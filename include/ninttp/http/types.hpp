@@ -268,7 +268,8 @@ namespace ninttp
                 ResponseBodyFraming framing = ResponseBodyFraming::ContentLength)
             {
                 if((framing == ResponseBodyFraming::None && !content.empty()) ||
-                    (framing == ResponseBodyFraming::Chunked && !usesHTTP11Rules(version)))
+                    (framing == ResponseBodyFraming::Chunked && !usesHTTP11Rules(version)) ||
+                    framing == ResponseBodyFraming::Tunnel)
                     return false;
 
                 eraseManagedFramingHeaders();
@@ -363,7 +364,8 @@ namespace ninttp
                             !trailingHeaders.has_value();
 
                     case ResponseBodyFraming::Tunnel:
-                        return !trailingHeaders.has_value();
+                        return !trailingHeaders.has_value() &&
+                            (!body.has_value() || body->empty());
                 }
 
                 return false;
@@ -397,9 +399,10 @@ namespace ninttp
                         break;
                     case ResponseBodyFraming::ContentLength:
                     case ResponseBodyFraming::ConnectionClose:
-                    case ResponseBodyFraming::Tunnel:
                         if(body.has_value())
                             responseStr += body.value();
+                        break;
+                    case ResponseBodyFraming::Tunnel:
                         break;
                     case ResponseBodyFraming::Chunked:{
                         if(bodyLength != 0){

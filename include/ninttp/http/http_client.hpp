@@ -83,7 +83,7 @@ namespace ninttp
             StreamSocket<EndpointT> streamSock_;
 
             std::expected<Response, NinError> parseResponse(StreamSocket<EndpointT>& sock){
-                internal::httpResponseParser<ver> parser;
+                internal::httpResponseParser<ver> parser{"GET"};
                 std::string got;
 
                 std::array<char, limits::ReadBufferSize> buf{};
@@ -99,8 +99,13 @@ namespace ninttp
                         if(err.category() == SocketErrorCategory::Interrupted)
                             continue;
 
-                        if(err.category() == SocketErrorCategory::ConnectionClosed)
-                            return std::unexpected{NinError::fromSocketCategory(SocketErrorCategory::ConnectionClosed, "Connection closed before a complete response was received")};
+                        if(err.category() == SocketErrorCategory::ConnectionClosed){
+                            auto finished = parser.finish();
+                            if(!finished.has_value())
+                                return std::unexpected{NinError::fromHttpParseError(finished.error())};
+
+                            return parser.getResponse();
+                        }
 
                         return std::unexpected{NinError::fromSocketError(err)};
                     }
@@ -109,7 +114,11 @@ namespace ninttp
 
                     if(read == 0){
                         std::clog << "[http.client] sender sent 0\n";
-                        return std::unexpected{NinError::fromSocketCategory(SocketErrorCategory::ConnectionClosed, "Connection closed before a complete response was received")};
+                        auto finished = parser.finish();
+                        if(!finished.has_value())
+                            return std::unexpected{NinError::fromHttpParseError(finished.error())};
+
+                        return parser.getResponse();
                     }
 
                     got.append(buf.data(), read);

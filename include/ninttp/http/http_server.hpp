@@ -133,9 +133,15 @@ namespace ninttp
 
                     response.setVersion(ver);
                     response.setStatusCode(200);
+                    if(response.getBodyFraming() == ResponseBodyFraming::None)
+                        response.clearContent();
 
+                    const auto responseFraming = response.getBodyFraming();
                     if(auto sent = streamSock.sendAll(response.toString()); !sent.has_value())
                         return std::unexpected{NinError::fromSocketError(sent.error())};
+
+                    if(responseFraming == ResponseBodyFraming::ConnectionClose)
+                        clientSockets_.pop_back();
                 }
 
                 std::clog << "[http.server] listen loop exited\n";

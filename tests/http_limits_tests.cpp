@@ -2,6 +2,7 @@
 
 #include <ninttp/http/http_limits.hpp>
 #include <ninttp/http/internal/http_request_parser.hpp>
+#include <ninttp/http/internal/http_response_parser.hpp>
 
 static_assert(ninttp::limits::MaxMethodLength == 17);
 static_assert(ninttp::limits::MaxBodyLength == 8);
@@ -29,6 +30,18 @@ int main(){
         const auto result = parser.append(
             "POST / HTTP/1.1\r\n"
             "Host: example.test\r\n"
+            "Content-Length: 9\r\n"
+            "\r\n"
+            "123456789");
+
+        assert(!result.has_value());
+        assert(result.error().type == ninttp::internal::httpParseErrorType::InvalidLength);
+    }
+
+    {
+        ninttp::internal::httpResponseParser<ninttp::http_1_1> parser{"GET"};
+        const auto result = parser.append(
+            "HTTP/1.1 200 OK\r\n"
             "Content-Length: 9\r\n"
             "\r\n"
             "123456789");
