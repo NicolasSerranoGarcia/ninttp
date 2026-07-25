@@ -38,4 +38,12 @@ namespace ninttp::concepts
             { ConnectedSocketT(socket, domain, service, protocol, endpoint) } noexcept
                 -> std::same_as<ConnectedSocketT>;
         };
+
+    template<typename SocketT>
+    concept NonblockingConfigurable = requires(
+        SocketT& socket, 
+        bool enabled) {
+        { socket.setNonblocking(enabled) } noexcept 
+                -> std::same_as<std::expected<void, SocketError>>;
+    };
 } // namespace ninttp::concepts

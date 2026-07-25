@@ -503,6 +503,8 @@ namespace ninttp::internal
 
                 if(::fcntl(s, F_SETFL, flags | O_NONBLOCK) == -1)
                     return std::unexpected{getLastError()};
+
+                return {};
             }
 
             /**

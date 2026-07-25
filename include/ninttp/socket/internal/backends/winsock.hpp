@@ -432,6 +432,8 @@ namespace ninttp::internal
                 iResult = ioctlsocket(m_socket, FIONBIO, &iMode);
                 if (iResult != NO_ERROR)
                     return std::unexpected{getLastError()};
+
+                return {};
             }
 
             /**

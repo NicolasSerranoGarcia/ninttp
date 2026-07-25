@@ -10,6 +10,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <chrono>
+#include <thread>
 
 #include "../endpoints.hpp"
 #include "../error/nin_error.hpp"
@@ -20,6 +22,9 @@
 #include "internal/http_request_parser.hpp"
 #include "internal/http_router.hpp"
 #include "types.hpp"
+#include "../socket/concepts.hpp"
+
+using namespace std::literals;
 
 namespace ninttp
 {
@@ -40,7 +45,12 @@ namespace ninttp
              * @throws NinError with .type = Socket if listener socket construction fails.
              */
             httpServer() try
-                : listenerSock_(Protocol::Tcp) {}
+                : listenerSock_(Protocol::Tcp) {
+                    if constexpr(concepts::NonblockingConfigurable<decltype(listenerSock_)>){
+                        if(auto set = listenerSock_.setNonblocking(true); !set)
+                            throw set.error();
+                    }
+                }
             catch(const SocketError& err) {
                 throw NinError::fromSocketError(err);
             }
@@ -67,81 +77,72 @@ namespace ninttp
                     return std::unexpected{NinError::fromSocketError(listenRes.error())};
 
                 while(true){
-
-                    //parse saved sockets from previous clients before trying to accept
-                    // for(auto& s : clientSockets_){
-                    //     if(!s.isUsable()){
-                    //         //probably dispose of it or handle it
-                    //     }
-                        
-                    //     //here we would need to check if it blocks
-                    //     //TODO: also, if they are not spread out into their own programs or threads, this would need a pq or ordering for priority of connections
-                    //     //at the moment we will just receive some
-
-                    // }
-
+                    std::this_thread::sleep_for(1000ms);
                     auto acceptRes = listenerSock_.accept();
-                    if(!acceptRes.has_value())
-                        return std::unexpected{NinError::fromSocketError(acceptRes.error())};
-
-                    clientSockets_.push_back(std::move(acceptRes).value());
-
-                    auto& streamSock = clientSockets_[clientSockets_.size()-1];
-
-                    Request request;
-                    auto requestRes = parseConnection(streamSock);
-                    if(!requestRes.has_value()){
-                        auto error = std::move(requestRes).error();
-                        //TODO: works because type being socket guarantees optional is not empty
-                        if(error.type == NinErrorType::Socket && *(error.socketCategory) == SocketErrorCategory::ConnectionClosed){
-                            continue;
-                        } else if(error.type == NinErrorType::Socket){
-                            return std::unexpected{std::move(error)};
-                        } else{ //httpParseError
-                            assert(error.parseErrorType.has_value());
-
-                            std::clog << "[http.server] request error: " << error.what << '\n';
-
-                            auto errorResponse = internal::httpErrorFactory<ver>::fromParseErrorType(*error.parseErrorType);
-                            if(auto sent = streamSock.sendAll(errorResponse); !sent.has_value())
-                                return std::unexpected{NinError::fromSocketError(sent.error())};
-
-                            continue;
-                        }
+                    if(!acceptRes.has_value()){
+                        auto err = acceptRes.error();
+                        if(err.category() != SocketErrorCategory::Blocks && err.category() != SocketErrorCategory::Interrupted)
+                            std::cerr << err.what() << std::endl;
+                    } else{
+                        clientSockets_.push_back(std::move(acceptRes).value());
                     }
 
-                    request = std::move(*requestRes);
+                    for(auto& streamSock : clientSockets_){
+                        Request request;
+                        auto requestRes = parseConnection(streamSock);
+                        if(!requestRes.has_value()){
+                            auto error = std::move(requestRes).error();
+                            //TODO: works because type being socket guarantees optional is not empty
+                            if(error.type == NinErrorType::Socket && *(error.socketCategory) == SocketErrorCategory::ConnectionClosed){
+                                continue;
+                            } else if(error.type == NinErrorType::Socket){
+                                return std::unexpected{std::move(error)};
+                            } else{ //httpParseError
+                                assert(error.parseErrorType.has_value());
 
-                    auto result = router_.handleRequest(request);
+                                std::clog << "[http.server] request error: " << error.what << '\n';
 
-                    if(!result){
-                        if(result.error() == 405){
-                            if(auto sent = sendMethodNotAllowed(streamSock, router_.getAllowedMethods(request)); !sent.has_value())
+                                auto errorResponse = internal::httpErrorFactory<ver>::fromParseErrorType(*error.parseErrorType);
+                                if(auto sent = streamSock.sendAll(errorResponse); !sent.has_value())
+                                    return std::unexpected{NinError::fromSocketError(sent.error())};
+
+                                continue;
+                            }
+                        }
+
+                        request = std::move(*requestRes);
+
+                        auto result = router_.handleRequest(request);
+
+                        if(!result){
+                            if(result.error() == 405){
+                                if(auto sent = sendMethodNotAllowed(streamSock, router_.getAllowedMethods(request)); !sent.has_value())
+                                    return std::unexpected{sent.error()};
+                            } else if(auto sent = sendStatus(streamSock, result.error()); !sent.has_value()){
                                 return std::unexpected{sent.error()};
-                        } else if(auto sent = sendStatus(streamSock, result.error()); !sent.has_value()){
-                            return std::unexpected{sent.error()};
+                            }
+                            continue;
                         }
-                        continue;
+
+                        //TODO: make the response and request a proxy object for the user, so that he cant change things like the version or the status code for responses.
+                        //We could do this by making the response atributes private and user functions public, but that would mean that every class that needs sudo access to
+                        //the object needs to be friended, which can be ugly. What about we use a second class that is only thought for user interface, and then only friend that with
+                        //the server side response object? we have a converter, zero copy, and once we have the server side object we function as normal
+                        Response response;
+                        result->get()(request, response);
+
+                        response.setVersion(ver);
+                        response.setStatusCode(200);
+                        if(response.getBodyFraming() == ResponseBodyFraming::None)
+                            response.clearContent();
+
+                        const auto responseFraming = response.getBodyFraming();
+                        if(auto sent = streamSock.sendAll(response.toString()); !sent.has_value())
+                            return std::unexpected{NinError::fromSocketError(sent.error())};
+
+                        if(responseFraming == ResponseBodyFraming::ConnectionClose)
+                            clientSockets_.pop_back();
                     }
-
-                    //TODO: make the response and request a proxy object for the user, so that he cant change things like the version or the status code for responses.
-                    //We could do this by making the response atributes private and user functions public, but that would mean that every class that needs sudo access to
-                    //the object needs to be friended, which can be ugly. What about we use a second class that is only thought for user interface, and then only friend that with
-                    //the server side response object? we have a converter, zero copy, and once we have the server side object we function as normal
-                    Response response;
-                    result->get()(request, response);
-
-                    response.setVersion(ver);
-                    response.setStatusCode(200);
-                    if(response.getBodyFraming() == ResponseBodyFraming::None)
-                        response.clearContent();
-
-                    const auto responseFraming = response.getBodyFraming();
-                    if(auto sent = streamSock.sendAll(response.toString()); !sent.has_value())
-                        return std::unexpected{NinError::fromSocketError(sent.error())};
-
-                    if(responseFraming == ResponseBodyFraming::ConnectionClose)
-                        clientSockets_.pop_back();
                 }
 
                 std::clog << "[http.server] listen loop exited\n";

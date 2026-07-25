@@ -185,6 +185,8 @@ namespace ninttp::internal
             [[nodiscard]] std::expected<void, SocketError> setNonblocking(bool set) noexcept{
                 if(auto succeed = BackendT::setNonblocking(handle_, set); !succeed)
                     return std::unexpected{succeed.error()};
+
+                return {};
             }
 
             /**
