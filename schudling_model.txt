@@ -1,0 +1,12 @@
+one thread dedicated for the server, which is only dedicated to accept connections. The second stream could split into
+either one thread that uses readiness mechanisms like epoll/coroutines, or multiple threads (worker pool) that take connections, regardless of their readiness.
+
+If we take the first option, then the backend is the one which is in charge of the scheduling policy for the sockets (associated to the connections). 
+To understand how the backend should take input and outputs i need to understand how polls and nonblocking work. 
+
+If we take the second option, there is no need to use nonblocking sockets (although it could be benificial), because each stream of execution can safely block
+without stoping other connections from being served. We could potentially utilize nonblocking behavior (not poll), to avoid a thread from blocking into an 
+operation. Another thread could take that work once it is ready (but that would require polling from the backend, which is the one telling us when the socket
+is ready). So whats the move? 
+
+Whats in place is the server split execution: one thread for the listener for sure, connections are streamed separately.

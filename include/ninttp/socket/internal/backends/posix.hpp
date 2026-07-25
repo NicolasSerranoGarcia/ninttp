@@ -495,6 +495,16 @@ namespace ninttp::internal
                 return static_cast<std::size_t>(received);
             }
 
+            static std::expected<void, ErrorT> setNonblocking(const SocketT& s, bool set) noexcept{
+                auto flags = ::fcntl(s, F_GETFL);
+
+                if(flags == -1)
+                    return std::unexpected{getLastError()};
+
+                if(::fcntl(s, F_SETFL, flags | O_NONBLOCK) == -1)
+                    return std::unexpected{getLastError()};
+            }
+
             /**
              * @brief Returns the current thread's errno value.
              */

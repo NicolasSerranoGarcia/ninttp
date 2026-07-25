@@ -74,7 +74,8 @@ namespace ninttp::concepts {
                     typename Backend::AddressLenT addrLen,
                     typename Backend::ErrorT err,
                     std::span<const char> sendBuffer,
-                    std::span<char> receiveBuffer) {
+                    std::span<char> receiveBuffer, 
+                    bool set) {
             #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
             { Backend::init() } noexcept -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
             { Backend::deinit() } noexcept -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
@@ -142,6 +143,9 @@ namespace ninttp::concepts {
                 -> std::same_as<std::expected<std::size_t, typename Backend::ErrorT>>;
             { Backend::receive(socket, receiveBuffer) } noexcept
                 -> std::same_as<std::expected<std::size_t, typename Backend::ErrorT>>;
+
+            { Backend::setNonblocking(socket, set) } noexcept
+                -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
 
             { Backend::categoryFromError(err) } noexcept -> std::same_as<ninttp::SocketErrorCategory>;
             { Backend::getMsgFromError(err) } -> std::same_as<std::string>;

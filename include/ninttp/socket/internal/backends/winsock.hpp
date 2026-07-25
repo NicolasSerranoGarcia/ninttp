@@ -427,6 +427,13 @@ namespace ninttp::internal
                 return static_cast<std::size_t>(received);
             }
 
+            static std::expected<void, ErrorT> setNonblocking(const SocketT& s, bool set) noexcept{
+                u_long iMode = 1;
+                iResult = ioctlsocket(m_socket, FIONBIO, &iMode);
+                if (iResult != NO_ERROR)
+                    return std::unexpected{getLastError()};
+            }
+
             /**
              * @brief Returns the current thread's last Winsock error.
              */
