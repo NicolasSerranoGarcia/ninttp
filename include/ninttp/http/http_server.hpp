@@ -76,6 +76,7 @@ namespace ninttp
                 if(auto listenRes = listenerSock_.listen(limits::MaxServerBacklog); !listenRes.has_value())
                     return std::unexpected{NinError::fromSocketError(listenRes.error())};
 
+                
                 while(true){
                     std::this_thread::sleep_for(1000ms);
                     auto acceptRes = listenerSock_.accept();
