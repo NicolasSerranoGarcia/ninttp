@@ -2,6 +2,7 @@
 - Add tests for malformed HTTP messages, methods, framing combinations, and routing edge cases.
 - Decide on the server concurrency model: threads, coroutines, an event loop, or external scheduling.
 - Continue header and folder cleanup as components stabilize.
+- replace assert in code with safer alternatives for release builds
 
 ## HTTP/1.x RFC compliance roadmap
 
