@@ -78,7 +78,10 @@ namespace ninttp
             using SocketBase::release;
             using SocketBase::service;
             using SocketBase::shutdown;
-
+            //TODO: add this flag to cmake
+            #ifdef NINTTP_BACKEND_ALLOWS_LISTENER_NONBLOCKING
+            using SocketBase::setNonblocking;
+            #endif
             /**
              * @brief Binds this listener to a local endpoint.
              *
@@ -171,6 +174,7 @@ namespace ninttp
             using SocketBase::release;
             using SocketBase::service;
             using SocketBase::shutdown;
+            using SocketBase::setNonblocking;
 
             /**
              * @brief Connects this socket to a remote endpoint.

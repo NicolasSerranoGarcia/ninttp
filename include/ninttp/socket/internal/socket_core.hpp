@@ -171,7 +171,7 @@ namespace ninttp::internal
              * cleanup.
              * @return Empty result on success, or the close status of the current state on failure.
              */
-            [[nodiscard]] std::expected<void, CloseStatus> replace(SocketCore&& other){
+            [[nodiscard]] std::expected<void, CloseStatus> replace(SocketCore&& other) noexcept{
                 if(auto closed = this->close(); !closed){
                     return std::unexpected{closed.error()};
                 }
@@ -180,6 +180,11 @@ namespace ninttp::internal
                 //that the call in the destructor will have no effect which is what can trigger the leak on the move assignment.
                 *this = std::move(other);
                 return {};
+            }
+
+            [[nodiscard]] std::expected<void, SocketError> setNonblocking(bool set) noexcept{
+                if(auto succeed = BackendT::setNonblocking(handle_, set); !succeed)
+                    return std::unexpected{succeed.error()};
             }
 
             /**
