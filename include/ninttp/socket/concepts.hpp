@@ -34,8 +34,9 @@ namespace ninttp::concepts
         Domain domain,
         Service service,
         Protocol protocol,
-        const EndpointT& endpoint) {
-            { ConnectedSocketT(socket, domain, service, protocol, endpoint) } noexcept
+        const EndpointT& endpoint,
+        bool blocks) {
+            { ConnectedSocketT(socket, domain, service, protocol, endpoint, blocks) } noexcept
                 -> std::same_as<ConnectedSocketT>;
         };
 

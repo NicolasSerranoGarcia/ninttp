@@ -59,8 +59,8 @@ namespace ninttp
              * @throws SocketError If backend initialization fails, if opening the native
              * socket fails or if setting the option Ipv6Only for the Ipv6 version of the socket fails.
              */
-            ListenerSocket(Protocol proto)
-                : SocketBase(concepts::endpointDomain<EndpointT>, Service::Stream, proto)
+            ListenerSocket(Protocol proto, bool blocks = true)
+                : SocketBase(concepts::endpointDomain<EndpointT>, Service::Stream, proto, blocks)
             {
                 //TODO: maybe give a user option in the future to deactivate this, but for the fromStorage 
                 //converters to work without problems we currently deactivate it
@@ -72,14 +72,14 @@ namespace ninttp
             }
 
             using SocketBase::close;
+            using SocketBase::blocks;
             using SocketBase::domain;
             using SocketBase::isUsable;
             using SocketBase::protocol;
             using SocketBase::release;
             using SocketBase::service;
             using SocketBase::shutdown;
-            //TODO: add this flag to cmake
-            #ifdef NINTTP_BACKEND_ALLOWS_LISTENER_NONBLOCKING
+            #if NINTTP_BACKEND_ALLOWS_LISTENER_NONBLOCKING == 1
             using SocketBase::setNonblocking;
             #endif
             /**
@@ -122,11 +122,14 @@ namespace ninttp
              * function uses the unchecked conversion because the storage comes directly from a
              * successful backend accept call.
              *
+             * @param blocks Whether operations on the returned connected socket should block.
              * @return Connected socket on success, or SocketError wrapping the native accept
              * error.
              */
-            [[nodiscard]] std::expected<ConnectedSocketT, SocketError> accept() noexcept{
-                auto accepted = internal::SelectedBackend::accept(handle_);
+            [[nodiscard]] std::expected<ConnectedSocketT, SocketError> accept(
+                bool blocks = true) noexcept
+            {
+                auto accepted = internal::SelectedBackend::accept(handle_, blocks);
                 if(!accepted.has_value())
                     return std::unexpected{SocketError{accepted.error()}};
 
@@ -137,7 +140,8 @@ namespace ninttp
                     domain_,
                     service_,
                     proto_,
-                    endpoint);
+                    endpoint,
+                    blocks);
             }
     };
 
@@ -164,10 +168,15 @@ namespace ninttp
              * @throws SocketError If backend initialization fails, or if opening the native
              * socket fails.
              */
-            StreamSocket(Protocol proto)
-                : SocketBase(concepts::endpointDomain<EndpointT>, Service::Stream, proto){}
+            StreamSocket(Protocol proto, bool blocks = true)
+                : SocketBase(
+                    concepts::endpointDomain<EndpointT>,
+                    Service::Stream,
+                    proto,
+                    blocks){}
 
             using SocketBase::close;
+            using SocketBase::blocks;
             using SocketBase::domain;
             using SocketBase::isUsable;
             using SocketBase::protocol;
@@ -280,8 +289,9 @@ namespace ninttp
                 Domain domain,
                 Service service,
                 Protocol proto,
-                const EndpointT& endpoint) noexcept
-                    : SocketBase(sock, domain, service, proto), peerEndpoint_(endpoint)
+                const EndpointT& endpoint,
+                bool blocks) noexcept
+                    : SocketBase(sock, domain, service, proto, blocks), peerEndpoint_(endpoint)
                 {}
 
             EndpointT peerEndpoint_{};

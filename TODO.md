@@ -4,9 +4,6 @@
 - Continue header and folder cleanup as components stabilize.
 - replace assert in code with safer alternatives for release builds
 
-- IMPORTANT: make all backends deny inheriting flagsd from the listener fd. Accepting should yeld a default fd. Then fd state is determininstic.
-Rn macos inherits nonblocking from listener and breaks send and receive flow.
-
 ## HTTP/1.x RFC compliance roadmap
 
 Main references:

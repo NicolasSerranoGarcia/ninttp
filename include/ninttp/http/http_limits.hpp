@@ -153,6 +153,7 @@ namespace ninttp::limits::detail{
 #endif
 }
 
+//do not propagate macros outside of this file
 #ifdef MaxMethodLength
     #undef MaxMethodLength
 #endif

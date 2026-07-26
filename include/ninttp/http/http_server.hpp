@@ -78,8 +78,8 @@ namespace ninttp
 
                 
                 while(true){
-                    std::this_thread::sleep_for(1000ms);
-                    auto acceptRes = listenerSock_.accept();
+                    bool blocks = true;
+                    auto acceptRes = listenerSock_.accept(blocks);
                     if(!acceptRes.has_value()){
                         auto err = acceptRes.error();
                         if(err.category() != SocketErrorCategory::Blocks && err.category() != SocketErrorCategory::Interrupted)

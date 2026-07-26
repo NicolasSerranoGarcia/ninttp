@@ -128,10 +128,23 @@ namespace ninttp::internal
              *
              * @return Native socket on success, or WSAGetLastError() from socket().
              */
-            static std::expected<SocketT, ErrorT> openSocket(Domain d, Service s, Protocol p) noexcept{
+            static std::expected<SocketT, ErrorT> openSocket(
+                Domain d,
+                Service s,
+                Protocol p,
+                bool blocks) noexcept
+            {
                 const SocketT socket = static_cast<SocketT>(::socket(toNative(d), toNative(s), toNative(p)));
                 if(socket == invalidSocket())
                     return std::unexpected{getLastError()};
+
+                if(!blocks){
+                    if(auto nonblocking = setNonblocking(socket, true); !nonblocking.has_value()){
+                        const ErrorT error = nonblocking.error();
+                        ::closesocket(socket);
+                        return std::unexpected{error};
+                    }
+                }
 
                 return socket;
             }
@@ -253,7 +266,10 @@ namespace ninttp::internal
              *
              * @return Accepted socket/address bundle, or WSAGetLastError() from accept().
              */
-            static std::expected<AddressBundleT, ErrorT> accept(const SocketT& s) noexcept{
+            static std::expected<AddressBundleT, ErrorT> accept(
+                const SocketT& s,
+                bool blocks) noexcept
+            {
                 AddressStorageT storage{};
                 AddressLenT len = sizeof(storage);
 
@@ -261,6 +277,12 @@ namespace ninttp::internal
 
                 if(sock == invalidSocket())
                     return std::unexpected{getLastError()};
+
+                if(auto configured = setNonblocking(sock, !blocks); !configured.has_value()){
+                    const ErrorT error = configured.error();
+                    ::closesocket(sock);
+                    return std::unexpected{error};
+                }
 
                 return AddressBundleT{sock, storage, len};
             }
@@ -428,9 +450,8 @@ namespace ninttp::internal
             }
 
             static std::expected<void, ErrorT> setNonblocking(const SocketT& s, bool set) noexcept{
-                u_long iMode = 1;
-                iResult = ioctlsocket(m_socket, FIONBIO, &iMode);
-                if (iResult != NO_ERROR)
+                u_long mode = set ? 1ul : 0ul;
+                if(::ioctlsocket(s, FIONBIO, &mode) == SOCKET_ERROR)
                     return std::unexpected{getLastError()};
 
                 return {};

@@ -151,10 +151,19 @@ namespace ninttp::internal
              * ambiguous-close case, the socket may leak because there is no place in this return
              * type to report both the option failure and an uncertain cleanup result.
              */
-            static std::expected<SocketT, ErrorT> openSocket(Domain d, Service s, Protocol p) noexcept{
+            static std::expected<SocketT, ErrorT> openSocket(
+                Domain d,
+                Service s,
+                Protocol p,
+                bool blocks) noexcept
+            {
                 int nativeService = toNative(s);
                 #if NINTTP_FD_CLOSE_EXEC == 1 && defined(SOCK_CLOEXEC)
                 nativeService |= SOCK_CLOEXEC;
+                #endif
+                #if defined(SOCK_NONBLOCK)
+                if(!blocks)
+                    nativeService |= SOCK_NONBLOCK;
                 #endif
 
                 const SocketT socket = static_cast<SocketT>(::socket(toNative(d), nativeService, toNative(p)));
@@ -166,6 +175,16 @@ namespace ninttp::internal
                     const ErrorT error = closeOnExec.error();
                     ::close(socket);
                     return std::unexpected{error};
+                }
+                #endif
+
+                #if !defined(SOCK_NONBLOCK)
+                if(!blocks){
+                    if(auto nonblocking = setNonblocking(socket, true); !nonblocking.has_value()){
+                        const ErrorT error = nonblocking.error();
+                        ::close(socket);
+                        return std::unexpected{error};
+                    }
                 }
                 #endif
 
@@ -297,12 +316,23 @@ namespace ninttp::internal
              * leak because there is no place in this return type to report both the option failure
              * and an uncertain cleanup result.
              */
-            static std::expected<AddressBundleT, ErrorT> accept(const SocketT& s) noexcept{
+            static std::expected<AddressBundleT, ErrorT> accept(
+                const SocketT& s,
+                bool blocks) noexcept
+            {
                 AddressStorageT storage{};
                 AddressLenT len = sizeof(storage);
 
-                #if NINTTP_FD_CLOSE_EXEC == 1 && NINTTP_HAVE_ACCEPT4 == 1 && defined(SOCK_CLOEXEC)
-                SocketT sock = ::accept4(s, reinterpret_cast<sockaddr*>(&storage), &len, SOCK_CLOEXEC);
+                #if NINTTP_HAVE_ACCEPT4 == 1
+                int flags = 0;
+                #if NINTTP_FD_CLOSE_EXEC == 1 && defined(SOCK_CLOEXEC)
+                flags |= SOCK_CLOEXEC;
+                #endif
+                #if defined(SOCK_NONBLOCK)
+                if(!blocks)
+                    flags |= SOCK_NONBLOCK;
+                #endif
+                SocketT sock = ::accept4(s, reinterpret_cast<sockaddr*>(&storage), &len, flags);
                 #else
                 SocketT sock = ::accept(s, reinterpret_cast<sockaddr*>(&storage), &len);
                 #endif
@@ -317,6 +347,20 @@ namespace ninttp::internal
                     return std::unexpected{error};
                 }
                 #endif
+
+                #if NINTTP_HAVE_ACCEPT4 == 1 && defined(SOCK_NONBLOCK)
+                const bool modeConfiguredAtomically = !blocks;
+                #else
+                constexpr bool modeConfiguredAtomically = false;
+                #endif
+
+                if(!modeConfiguredAtomically){
+                    if(auto configured = setNonblocking(sock, !blocks); !configured.has_value()){
+                        const ErrorT error = configured.error();
+                        ::close(sock);
+                        return std::unexpected{error};
+                    }
+                }
 
                 #if NINTTP_PLATFORM_BSD == 1 || NINTTP_PLATFORM_APPLE == 1
                 const int noSigPipe = 1;
@@ -496,12 +540,16 @@ namespace ninttp::internal
             }
 
             static std::expected<void, ErrorT> setNonblocking(const SocketT& s, bool set) noexcept{
-                auto flags = ::fcntl(s, F_GETFL);
+                const int flags = ::fcntl(s, F_GETFL);
 
                 if(flags == -1)
                     return std::unexpected{getLastError()};
 
-                if(::fcntl(s, F_SETFL, flags | O_NONBLOCK) == -1)
+                const int newFlags = set
+                    ? flags | O_NONBLOCK
+                    : flags & ~O_NONBLOCK;
+
+                if(::fcntl(s, F_SETFL, newFlags) == -1)
                     return std::unexpected{getLastError()};
 
                 return {};

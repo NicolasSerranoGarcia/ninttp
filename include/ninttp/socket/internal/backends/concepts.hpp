@@ -75,13 +75,13 @@ namespace ninttp::concepts {
                     typename Backend::ErrorT err,
                     std::span<const char> sendBuffer,
                     std::span<char> receiveBuffer, 
-                    bool set) {
+                    bool blocks) {
             #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
             { Backend::init() } noexcept -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
             { Backend::deinit() } noexcept -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
             #endif
 
-            { Backend::openSocket(domain, service, protocol) } noexcept
+            { Backend::openSocket(domain, service, protocol, blocks) } noexcept
                 -> std::same_as<std::expected<typename Backend::SocketT, typename Backend::ErrorT>>;
             { Backend::closeSocket(socket) } noexcept -> std::same_as<typename Backend::CloseStatusT>;
             { Backend::isUsableSocket(socket) } noexcept -> std::convertible_to<bool>;
@@ -105,7 +105,7 @@ namespace ninttp::concepts {
                 -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
             { Backend::listen(socket, backlog) } noexcept
                 -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
-            { Backend::accept(socket) } noexcept
+            { Backend::accept(socket, blocks) } noexcept
                 -> std::same_as<std::expected<typename Backend::AddressBundleT, typename Backend::ErrorT>>;
             { Backend::connect(socket, addr, addrLen) } noexcept
                 -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
@@ -144,7 +144,7 @@ namespace ninttp::concepts {
             { Backend::receive(socket, receiveBuffer) } noexcept
                 -> std::same_as<std::expected<std::size_t, typename Backend::ErrorT>>;
 
-            { Backend::setNonblocking(socket, set) } noexcept
+            { Backend::setNonblocking(socket, blocks) } noexcept
                 -> std::same_as<std::expected<void, typename Backend::ErrorT>>;
 
             { Backend::categoryFromError(err) } noexcept -> std::same_as<ninttp::SocketErrorCategory>;

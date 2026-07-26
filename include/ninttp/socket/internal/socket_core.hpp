@@ -54,7 +54,11 @@ namespace ninttp::internal
              * initialization fails.
              */
             SocketCore()
-                : handle_(BackendT::invalidSocket()), domain_(Domain::Invalid), service_(Service::Invalid), proto_(Protocol::Invalid)
+                : handle_(BackendT::invalidSocket()),
+                  domain_(Domain::Invalid),
+                  service_(Service::Invalid),
+                  proto_(Protocol::Invalid),
+                  blocks_(true)
             {
                 #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
                 SocketCore::initBackend();
@@ -69,14 +73,18 @@ namespace ninttp::internal
              * @throws SocketError If backend initialization fails, or if opening the native
              * socket fails.
              */
-            SocketCore(Domain d, Service s, Protocol p)
-                : handle_(BackendT::invalidSocket()), domain_(d), service_(s), proto_(p)
+            SocketCore(Domain d, Service s, Protocol p, bool blocks = true)
+                : handle_(BackendT::invalidSocket()),
+                  domain_(d),
+                  service_(s),
+                  proto_(p),
+                  blocks_(blocks)
             {
                 #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
                 SocketCore::initBackend();
                 #endif
 
-                auto opened = BackendT::openSocket(d, s, p);
+                auto opened = BackendT::openSocket(d, s, p, blocks);
                 if(!opened.has_value())
                     throw SocketError{opened.error()};
 
@@ -87,7 +95,11 @@ namespace ninttp::internal
             SocketCore& operator=(const SocketCore&) = delete;
 
             SocketCore(SocketCore&& other) noexcept
-                : handle_(std::move(other.handle_)), domain_(std::move(other.domain_)), service_(std::move(other.service_)), proto_(std::move(other.proto_))
+                : handle_(std::move(other.handle_)),
+                  domain_(std::move(other.domain_)),
+                  service_(std::move(other.service_)),
+                  proto_(std::move(other.proto_)),
+                  blocks_(other.blocks_)
             {
                 other.invalidate_();
             }
@@ -121,6 +133,7 @@ namespace ninttp::internal
                 std::swap(service_, other.service_);
                 std::swap(proto_, other.proto_);
                 std::swap(handle_, other.handle_);
+                std::swap(blocks_, other.blocks_);
             }
 
             /**
@@ -145,6 +158,11 @@ namespace ninttp::internal
              * @brief Returns the socket protocol recorded when the handle was opened or adopted.
              */
             [[nodiscard]] constexpr Protocol protocol() const noexcept{ return proto_; };
+
+            /**
+             * @brief Reports whether socket operations are configured to block.
+             */
+            [[nodiscard]] constexpr bool blocks() const noexcept{ return blocks_; }
 
             /**
              * @brief Shuts down receive, send, or both directions of the socket.
@@ -184,8 +202,9 @@ namespace ninttp::internal
 
             [[nodiscard]] std::expected<void, SocketError> setNonblocking(bool set) noexcept{
                 if(auto succeed = BackendT::setNonblocking(handle_, set); !succeed)
-                    return std::unexpected{succeed.error()};
+                    return std::unexpected{SocketError{succeed.error()}};
 
+                blocks_ = !set;
                 return {};
             }
 
@@ -270,10 +289,17 @@ namespace ninttp::internal
              * This constructor is protected because public unchecked adoption would be easy to
              * misuse. ListenerSocket uses it to construct connected sockets returned by accept().
              */
-            constexpr SocketCore(SocketT sock, Domain d, Service s, Protocol p) noexcept 
-                : handle_(sock), domain_(d), service_(s), proto_(p){}
+            constexpr SocketCore(
+                SocketT sock,
+                Domain d,
+                Service s,
+                Protocol p,
+                bool blocks = true) noexcept
+                : handle_(sock), domain_(d), service_(s), proto_(p), blocks_(blocks){}
 
         private:
+            bool blocks_;
+
             /**
              * @brief Marks this core as empty without closing the current handle.
              */
@@ -282,6 +308,7 @@ namespace ninttp::internal
                 domain_ = Domain::Invalid;
                 proto_ = Protocol::Invalid;
                 service_ = Service::Invalid;
+                blocks_ = true;
             }
             
             #if NINTTP_SOCKET_BACKEND_REQUIRES_INIT == 1
