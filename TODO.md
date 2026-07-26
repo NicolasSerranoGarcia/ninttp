@@ -4,6 +4,9 @@
 - Continue header and folder cleanup as components stabilize.
 - replace assert in code with safer alternatives for release builds
 
+- Dispose of connections that are not valid on the server. Before moving the scheduling model away from the listener, we need to make sure
+the nonblocking model is correctly settled.
+
 ## HTTP/1.x RFC compliance roadmap
 
 Main references:
