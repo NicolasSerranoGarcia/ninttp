@@ -10,8 +10,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <chrono>
-#include <thread>
 
 #include "../endpoints.hpp"
 #include "../error/nin_error.hpp"
@@ -24,7 +22,6 @@
 #include "types.hpp"
 #include "../socket/concepts.hpp"
 
-using namespace std::literals;
 
 namespace ninttp
 {

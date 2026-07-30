@@ -423,6 +423,8 @@ namespace ninttp::internal
                 }
             }
 
+            //exists because a response can be close delimited. This means that the closing of the connection mark the end of the response.
+            //connection close delimited messages are not allowed on requests
             std::expected<httpParseStatus, httpParseError> finish(){
                 if(state == Processing::Finished)
                     return httpParseStatus::Done;
