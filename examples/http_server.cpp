@@ -8,10 +8,14 @@ int server(){
     try{
         httpServer server;
         if(!server.registerHost("localhost") ||
-           !server.registerHandler("localhost", "/", "GET", [](const Request&, Response& response){ response.setContent("Hello, World!"); })){
+           !server.registerHandler("localhost", "/", "GET", [](const Request& request, Response& response){
+               std::cout << request << std::endl;
+               response.setContent("Hello, World!");
+           })){
             std::cerr << "failed to register HTTP route" << std::endl;
             return 1;
         }
+        std::cout << "Listening on 127.0.0.1:8080" << std::endl;
         if(auto listened = server.listen(IPv4Endpoint::loopback(8080)); !listened.has_value()){
             std::cerr << listened.error().what << std::endl;
             return 1;

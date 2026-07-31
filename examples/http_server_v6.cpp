@@ -8,10 +8,14 @@ int serverV6(){
     try{
         httpServer<http_1_0, IPv6Endpoint> serverV6;
         if(!serverV6.registerHost("localhost") ||
-           !serverV6.registerHandler("localhost", "/", "GET", [](const Request&, Response& response){ response.setContent("Hello, World!"); })){
+           !serverV6.registerHandler("localhost", "/", "GET", [](const Request& request, Response& response){
+               std::cout << request << std::endl;
+               response.setContent("Hello, World!");
+           })){
             std::cerr << "failed to register HTTP route" << std::endl;
             return 1;
         }
+        std::cout << "Listening on [::1]:8080" << std::endl;
         if(auto listened = serverV6.listen(IPv6Endpoint::loopback(8080)); !listened.has_value()){
             std::cerr << listened.error().what << std::endl;
             return 1;

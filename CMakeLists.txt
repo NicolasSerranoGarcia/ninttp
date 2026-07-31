@@ -72,6 +72,7 @@ set(public_headers
     include/ninttp/http/http_limits.hpp
     include/ninttp/http/internal/http_request_parser.hpp
     include/ninttp/http/internal/http_response_parser.hpp
+    include/ninttp/http/internal/http_connection.hpp
     include/ninttp/http/internal/http_router.hpp
 )
 

@@ -4,7 +4,6 @@
 #include <charconv>
 #include <cstddef>
 #include <expected>
-#include <iostream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -220,8 +219,6 @@ namespace ninttp::internal
                                     lastProcessedIdx = requestLineEnd+2;
                                     assert(lastProcessedIdx != std::string::npos);
 
-                                    std::clog << "[http.request_parser] state=RequestLine -> Headers\n";
-
                                     state = Processing::Headers;
                                     break;
                                 } // case RequestLineProcessing::Version
@@ -351,7 +348,6 @@ namespace ninttp::internal
                             request.body.emplace();
                             remaining = bodySize;
 
-                            std::clog << "[http.request_parser] state=Headers -> Body; body_size=" << bodySize << '\n';
                             state = Processing::Body;
 
                             break;
@@ -381,8 +377,6 @@ namespace ninttp::internal
                                     remaining = 0;
 
                                     lastProcessedIdx += consumed;
-
-                                    std::clog << "[http.request_parser] state=Body -> Finished\n";
 
                                     state = Processing::Finished;
                                     return httpParseStatus::Done;

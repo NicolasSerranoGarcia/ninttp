@@ -12,6 +12,7 @@ int server(){
             std::cerr << "failed to register HTTP route" << std::endl;
             return 1;
         }
+        std::cout << "Listening on 127.0.0.1:8080" << std::endl;
         if(auto listened = server.listen(IPv4Endpoint::loopback(8080)); !listened.has_value()){
             std::cerr << listened.error().what << std::endl;
             return 1;

@@ -1,9 +1,8 @@
 #pragma once
 
-#include <array>
+#include <algorithm>
 #include <cassert>
 #include <concepts>
-#include <cstddef>
 #include <expected>
 #include <functional>
 #include <iostream>
@@ -17,10 +16,10 @@
 #include "../socket/traits.hpp"
 #include "internal/http_error_factory.hpp"
 #include "http_limits.hpp"
-#include "internal/http_request_parser.hpp"
 #include "internal/http_router.hpp"
 #include "types.hpp"
 #include "../socket/concepts.hpp"
+#include "internal/http_connection.hpp"
 
 
 namespace ninttp
@@ -75,21 +74,20 @@ namespace ninttp
 
                 
                 while(true){
-                    bool blocks = true;
+                    bool blocks = false;
                     auto acceptRes = listenerSock_.accept(blocks);
                     if(!acceptRes.has_value()){
                         auto err = acceptRes.error();
                         if(err.category() != SocketErrorCategory::Blocks && err.category() != SocketErrorCategory::Interrupted)
                             std::cerr << err.what() << std::endl;
                     } else{
-                        clientSockets_.push_back(std::move(acceptRes).value());
+                        clientConnections_.emplace_back(std::move(acceptRes).value());
                     }
 
-                    for(auto& streamSock : clientSockets_){
-                        Request request;
-                        auto requestRes = parseConnection(streamSock);
-                        if(!requestRes.has_value()){
-                            auto error = std::move(requestRes).error();
+                    for(auto& connection : clientConnections_){
+                        auto readable = connection.onReadable();
+                        if(!readable.has_value()){
+                            auto error = std::move(readable).error();
                             //TODO: works because type being socket guarantees optional is not empty
                             if(error.type == NinErrorType::Socket && *(error.socketCategory) == SocketErrorCategory::ConnectionClosed){
                                 continue;
@@ -101,33 +99,38 @@ namespace ninttp
                                 std::clog << "[http.server] request error: " << error.what << '\n';
 
                                 auto errorResponse = internal::httpErrorFactory<ver>::fromParseErrorType(*error.parseErrorType);
-                                if(auto sent = streamSock.sendAll(errorResponse); !sent.has_value())
-                                    return std::unexpected{NinError::fromSocketError(sent.error())};
+                                const bool queued = connection.queueOutput(errorResponse);
+                                assert(queued);
+                                (void)queued;
+                                if(auto finished = connection.finishResponse(); !finished.has_value())
+                                    return std::unexpected{std::move(finished).error()};
+                                if(auto sent = connection.onWritable(); !sent.has_value())
+                                    return std::unexpected{std::move(sent).error()};
 
                                 continue;
                             }
                         }
 
-                        request = std::move(*requestRes);
+                        if(!connection.hasRequest())
+                            continue;
 
-                        auto result = router_.handleRequest(request);
+                        auto request = connection.takeRequest();
+                        assert(request.has_value());
+
+                        auto result = router_.handleRequest(*request);
 
                         if(!result){
                             if(result.error() == 405){
-                                if(auto sent = sendMethodNotAllowed(streamSock, router_.getAllowedMethods(request)); !sent.has_value())
+                                if(auto sent = sendMethodNotAllowed(connection, router_.getAllowedMethods(*request)); !sent.has_value())
                                     return std::unexpected{sent.error()};
-                            } else if(auto sent = sendStatus(streamSock, result.error()); !sent.has_value()){
+                            } else if(auto sent = sendStatus(connection, result.error()); !sent.has_value()){
                                 return std::unexpected{sent.error()};
                             }
                             continue;
                         }
 
-                        //TODO: make the response and request a proxy object for the user, so that he cant change things like the version or the status code for responses.
-                        //We could do this by making the response atributes private and user functions public, but that would mean that every class that needs sudo access to
-                        //the object needs to be friended, which can be ugly. What about we use a second class that is only thought for user interface, and then only friend that with
-                        //the server side response object? we have a converter, zero copy, and once we have the server side object we function as normal
                         Response response;
-                        result->get()(request, response);
+                        result->get()(*request, response);
 
                         response.setVersion(ver);
                         response.setStatusCode(200);
@@ -135,12 +138,20 @@ namespace ninttp
                             response.clearContent();
 
                         const auto responseFraming = response.getBodyFraming();
-                        if(auto sent = streamSock.sendAll(response.toString()); !sent.has_value())
-                            return std::unexpected{NinError::fromSocketError(sent.error())};
+                        const bool queued = connection.queueResponse(response);
+                        assert(queued);
+                        (void)queued;
 
                         if(responseFraming == ResponseBodyFraming::ConnectionClose)
-                            clientSockets_.pop_back();
+                            connection.closeAfterWrite();
+
+                        if(auto sent = connection.onWritable(); !sent.has_value())
+                            return std::unexpected{std::move(sent).error()};
                     }
+
+                    std::erase_if(clientConnections_, [](const auto& connection){
+                        return connection.closed();
+                    });
                 }
 
                 std::clog << "[http.server] listen loop exited\n";
@@ -150,24 +161,34 @@ namespace ninttp
             }
 
         private:
-            std::expected<void, NinError> sendStatus(StreamSocket<EndpointT>& socket, StatusCode status){
+            using ConnectionT = internal::httpServerConnection<ver, EndpointT>;
+
+            std::expected<void, NinError> sendStatus(ConnectionT& connection, StatusCode status){
                 auto response = internal::httpErrorFactory<ver>::fromStatusCode(status);
-                if(auto sent = socket.sendAll(response); !sent.has_value())
-                    return std::unexpected{NinError::fromSocketError(sent.error())};
+                const bool queued = connection.queueOutput(response);
+                assert(queued);
+                (void)queued;
+                if(auto finished = connection.finishResponse(); !finished.has_value())
+                    return std::unexpected{std::move(finished).error()};
+                if(auto sent = connection.onWritable(); !sent.has_value())
+                    return std::unexpected{std::move(sent).error()};
 
                 return {};
             }
 
             std::expected<void, NinError> sendMethodNotAllowed(
-                StreamSocket<EndpointT>& socket,
+                ConnectionT& connection,
                 std::string allowedMethods)
             {
                 Response response{ver, 405};
                 response.clearContent();
                 response.addHeader("Allow", std::move(allowedMethods));
 
-                if(auto sent = socket.sendAll(response.toString()); !sent.has_value())
-                    return std::unexpected{NinError::fromSocketError(sent.error())};
+                const bool queued = connection.queueResponse(response);
+                assert(queued);
+                (void)queued;
+                if(auto sent = connection.onWritable(); !sent.has_value())
+                    return std::unexpected{std::move(sent).error()};
 
                 return {};
             }
@@ -176,56 +197,6 @@ namespace ninttp
 
             internal::httpRouter<ver> router_;
 
-            std::vector<StreamSocket<EndpointT>> clientSockets_;
-
-            std::expected<Request, NinError> parseConnection(StreamSocket<EndpointT>& sock){
-                internal::httpRequestParser<ver> parser;
-                std::string got;
-
-                std::array<char, limits::ReadBufferSize> buf{};
-
-                auto htppParseStatus = internal::httpParseStatus::NeedData;
-                do{
-                    auto res = sock.receive(buf);
-
-                    if(!res.has_value()){
-                        const SocketError& err = res.error();
-                        if(err.category() == SocketErrorCategory::Interrupted)
-                            continue;
-
-                        if(err.category() == SocketErrorCategory::ConnectionClosed)
-                            return std::unexpected{NinError::fromSocketCategory(SocketErrorCategory::ConnectionClosed, "Connection closed before a complete request was received")};
-
-                        return std::unexpected{NinError::fromSocketError(err)};
-                    }
-
-                    std::size_t read = res.value();
-
-                    if(read == 0){
-                        std::clog << "[http.server] sender sent 0\n";
-                        return std::unexpected{NinError::fromSocketCategory(SocketErrorCategory::ConnectionClosed, "Connection closed before a complete request was received")};
-                    }
-
-                    got.append(buf.data(), read);
-
-                    std::clog << "[http.server] received " << got.size() << " bytes:\n" << got << '\n';
-                    auto parseRes = parser.append(got);
-                    got.clear();
-
-                    if(!parseRes.has_value())
-                        return std::unexpected{NinError::fromHttpParseError(parseRes.error())};
-
-                    htppParseStatus = *parseRes;
-                    if(htppParseStatus == internal::httpParseStatus::Done){
-                        assert(parser.finished());
-                        break;
-                    }
-                }while(htppParseStatus == internal::httpParseStatus::NeedData);
-
-                std::clog << "[http.server] request parser finished\n";
-
-                //assert getRequest leaves the internal Request defaulted
-                return parser.getRequest();
-            }
+            std::vector<ConnectionT> clientConnections_;
     };
 } // namespace ninttp
