@@ -4,6 +4,7 @@
 #include <cassert>
 #include <concepts>
 #include <expected>
+#include <exception>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -87,28 +88,8 @@ namespace ninttp
                     for(auto& connection : clientConnections_){
                         auto readable = connection.onReadable();
                         if(!readable.has_value()){
-                            auto error = std::move(readable).error();
-                            //TODO: works because type being socket guarantees optional is not empty
-                            if(error.type == NinErrorType::Socket && *(error.socketCategory) == SocketErrorCategory::ConnectionClosed){
-                                continue;
-                            } else if(error.type == NinErrorType::Socket){
-                                return std::unexpected{std::move(error)};
-                            } else{ //httpParseError
-                                assert(error.parseErrorType.has_value());
-
-                                std::clog << "[http.server] request error: " << error.what << '\n';
-
-                                auto errorResponse = internal::httpErrorFactory<ver>::fromParseErrorType(*error.parseErrorType);
-                                const bool queued = connection.queueOutput(errorResponse);
-                                assert(queued);
-                                (void)queued;
-                                if(auto finished = connection.finishResponse(); !finished.has_value())
-                                    return std::unexpected{std::move(finished).error()};
-                                if(auto sent = connection.onWritable(); !sent.has_value())
-                                    return std::unexpected{std::move(sent).error()};
-
-                                continue;
-                            }
+                            handleConnectionError(connection, std::move(readable).error());
+                            continue;
                         }
 
                         if(!connection.hasRequest())
@@ -122,15 +103,27 @@ namespace ninttp
                         if(!result){
                             if(result.error() == 405){
                                 if(auto sent = sendMethodNotAllowed(connection, router_.getAllowedMethods(*request)); !sent.has_value())
-                                    return std::unexpected{sent.error()};
+                                    handleConnectionError(connection, std::move(sent).error());
                             } else if(auto sent = sendStatus(connection, result.error()); !sent.has_value()){
-                                return std::unexpected{sent.error()};
+                                handleConnectionError(connection, std::move(sent).error());
                             }
                             continue;
                         }
 
                         Response response;
-                        result->get()(*request, response);
+                        try{
+                            result->get()(*request, response);
+                        } catch(const std::exception& error){
+                            std::clog << "[http.server] request handler failed: " << error.what() << '\n';
+                            if(auto sent = sendStatus(connection, 500); !sent.has_value())
+                                handleConnectionError(connection, std::move(sent).error());
+                            continue;
+                        } catch(...){
+                            std::clog << "[http.server] request handler failed with an unknown exception\n";
+                            if(auto sent = sendStatus(connection, 500); !sent.has_value())
+                                handleConnectionError(connection, std::move(sent).error());
+                            continue;
+                        }
 
                         response.setVersion(ver);
                         response.setStatusCode(200);
@@ -146,7 +139,7 @@ namespace ninttp
                             connection.closeAfterWrite();
 
                         if(auto sent = connection.onWritable(); !sent.has_value())
-                            return std::unexpected{std::move(sent).error()};
+                            handleConnectionError(connection, std::move(sent).error());
                     }
 
                     std::erase_if(clientConnections_, [](const auto& connection){
@@ -162,6 +155,46 @@ namespace ninttp
 
         private:
             using ConnectionT = internal::httpServerConnection<ver, EndpointT>;
+
+            void handleConnectionError(ConnectionT& connection, NinError error){
+                if(error.type == NinErrorType::Socket){
+                    const auto category = error.socketCategory.value_or(SocketErrorCategory::Other);
+
+                    if(category == SocketErrorCategory::Blocks ||
+                        category == SocketErrorCategory::Interrupted ||
+                        category == SocketErrorCategory::ConnectionClosed)
+                        return;
+
+                    std::clog << "[http.server] connection error: " << error.what << '\n';
+                    return;
+                }
+
+                std::clog << "[http.server] request error: " << error.what << '\n';
+
+                if(!error.parseErrorType.has_value()){
+                    connection.closeAfterWrite();
+                    return;
+                }
+
+                auto errorResponse = internal::httpErrorFactory<ver>::fromParseErrorType(*error.parseErrorType);
+                if(!connection.queueOutput(errorResponse)){
+                    connection.closeAfterWrite();
+                    return;
+                }
+
+                if(auto finished = connection.finishResponse(); !finished.has_value()){
+                    std::clog << "[http.server] connection error while finishing error response: "
+                              << finished.error().what << '\n';
+                    connection.closeAfterWrite();
+                    return;
+                }
+
+                connection.closeAfterWrite();
+                if(auto sent = connection.onWritable(); !sent.has_value() &&
+                    sent.error().socketCategory != SocketErrorCategory::ConnectionClosed)
+                    std::clog << "[http.server] connection error while sending error response: "
+                              << sent.error().what << '\n';
+            }
 
             std::expected<void, NinError> sendStatus(ConnectionT& connection, StatusCode status){
                 auto response = internal::httpErrorFactory<ver>::fromStatusCode(status);

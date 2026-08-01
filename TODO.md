@@ -1,11 +1,13 @@
 - Document socket state lifetimes and invariants.
 - Add tests for malformed HTTP messages, methods, framing combinations, and routing edge cases.
-- Decide on the server concurrency model: threads, coroutines, an event loop, or external scheduling.
+- Implement the chosen readiness-driven event loop:
+  - add a poller abstraction for the supported backends;
+  - register the listener and accepted sockets with the poller;
+  - synchronize each connection's calculated `interests()` with its poller registration;
+  - dispatch readiness to `onReadable()` and `onWritable()` instead of busy-scanning every connection.
+- Define connection admission and backpressure limits, including a maximum active-connection count and bounded queued output.
 - Continue header and folder cleanup as components stabilize.
 - replace assert in code with safer alternatives for release builds
-
-- Dispose of connections that are not valid on the server. Before moving the scheduling model away from the listener, we need to make sure
-the nonblocking model is correctly settled.
 
 ## HTTP/1.x RFC compliance roadmap
 
@@ -17,10 +19,11 @@ Main references:
 
 ### HTTP/1.1 connection behavior
 
-- Make HTTP/1.1 connections persistent by default.
-- Honor `Connection: close`.
-- Decide whether to support HTTP/1.0 keep-alive compatibility and implement it consistently if so.
-- Support request pipelining or deliberately serialize/reject it.
+- Apply HTTP version and `Connection` header persistence rules on top of the reusable connection exchange state machine.
+  - Keep HTTP/1.1 connections persistent by default.
+  - Honor request and response `Connection: close`.
+  - Decide whether to support HTTP/1.0 keep-alive compatibility and implement it consistently if so.
+- Define the public pipelining policy. Connections already preserve parser leftovers and serialize request/response exchanges, but queue limits and rejection behavior remain unspecified.
 - Add read, write, idle, and incomplete-message timeouts.
 - Define socket half-close and connection error behavior in protocol terms.
 
@@ -90,8 +93,8 @@ Main references:
 
 ### Server behavior
 
-- Add concurrent connection handling.
-- Manage keep-alive connection lifetimes.
+- Complete readiness-based concurrent connection scheduling; accepted sockets are already nonblocking and each connection owns its parser, buffers, and exchange state.
+- Add keep-alive lifetime and request-count policies.
 - If static/file responses are added, support:
   - MIME type;
   - content length;
