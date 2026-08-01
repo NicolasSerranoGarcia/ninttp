@@ -4,6 +4,7 @@ add_executable(http_server_v6 http_server_v6.cpp)
 add_executable(http_client_v6 http_client_v6.cpp)
 add_executable(client_notfound client_notfound.cpp)
 add_executable(server_notfound server_notfound.cpp)
+add_executable(boost_url_example boost_url.cpp)
 
 target_compile_features(http_client
     PRIVATE
@@ -61,6 +62,16 @@ target_compile_features(server_notfound
 )
 
 target_link_libraries(server_notfound
+    PRIVATE
+        ninttp::ninttp
+)
+
+target_compile_features(boost_url_example
+    PRIVATE
+        cxx_std_23
+)
+
+target_link_libraries(boost_url_example
     PRIVATE
         ninttp::ninttp
 )
