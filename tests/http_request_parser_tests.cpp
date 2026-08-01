@@ -40,6 +40,44 @@ int main(){
 
     {
         httpRequestParser<http_1_1> parser;
+        const auto result = parser.append(
+            "GET /search?q=hello%20world&tag=cpp&tag=http HTTP/1.1\r\n"
+            "Host: LOCALHOST:8080\r\n"
+            "\r\n");
+
+        NINTTP_CHECK(result == httpParseStatus::Done);
+        const auto request = parser.getRequest();
+        NINTTP_CHECK(request.getAuthority().has_value());
+        NINTTP_CHECK(request.getAuthority()->normalizedHost() == "localhost");
+        NINTTP_CHECK(request.getAuthority()->port() == 8080);
+        NINTTP_CHECK(request.getPath() == "/search");
+        NINTTP_CHECK(request.getQueryParameters().size() == 3);
+    }
+
+    {
+        httpRequestParser<http_1_1> parser;
+        const auto result = parser.append(
+            "GET / HTTP/1.1\r\n"
+            "Host: localhost:99999\r\n"
+            "\r\n");
+
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == httpParseErrorType::InvalidAuthority);
+    }
+
+    {
+        httpRequestParser<http_1_1> parser;
+        const auto result = parser.append(
+            "GET /bad%target HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "\r\n");
+
+        NINTTP_CHECK(!result.has_value());
+        NINTTP_CHECK(result.error().type == httpParseErrorType::InvalidRequestTarget);
+    }
+
+    {
+        httpRequestParser<http_1_1> parser;
         const auto result = parser.append("GET / HTTP/0.9\r\n\r\n");
         NINTTP_CHECK(!result.has_value());
         NINTTP_CHECK(result.error().type == httpParseErrorType::UnsupportedVersion);

@@ -7,7 +7,7 @@ using namespace ninttp;
 
 int client(){
     try{
-        httpClient client(IPv4Endpoint::loopback(8080), "localhost");
+        httpClient client(IPv4Endpoint::loopback(8080), "localhost:8080");
 
         std::expected<Response, NinError> got;
 

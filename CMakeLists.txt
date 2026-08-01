@@ -69,6 +69,7 @@ set(public_headers
     include/ninttp/http/http_client.hpp
     include/ninttp/http/http_server.hpp
     include/ninttp/http/http_method_config.hpp
+    include/ninttp/http/uri.hpp
     include/ninttp/http/types.hpp
     include/ninttp/http/http_limits.hpp
     include/ninttp/http/internal/http_request_parser.hpp

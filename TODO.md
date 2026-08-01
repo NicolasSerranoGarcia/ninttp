@@ -27,24 +27,6 @@ Main references:
 - Add read, write, idle, and incomplete-message timeouts.
 - Define socket half-close and connection error behavior in protocol terms.
 
-### Request routing and targets
-
-- Complete `Host` handling. Missing and duplicate fields are already rejected.
-  - Parse the authority as a hostname, IPv4 address, or bracketed IPv6 literal, with an optional port.
-  - Reject malformed and empty authorities with `400 Bad Request`.
-  - Normalize hostnames and default ports for matching while preserving the received authority for diagnostics.
-  - Define how an explicit default authority interacts with a request made directly to an IP address.
-- Parse all HTTP/1.1 request-target forms:
-  - origin-form: `/path?query`;
-  - absolute-form for proxy requests;
-  - authority-form for `CONNECT`;
-  - asterisk-form for `OPTIONS *`.
-- Add URI parsing/normalization enough to route safely.
-- Complete virtual-host routing semantics; registration and `Host` -> target -> method lookup are in place.
-  - Document the current `421 Misdirected Request` policy for unknown authorities or make it configurable.
-  - Keep Host routing separate from authorization; a client-controlled Host value is not proof of identity.
-  - When TLS is added, validate the relationship between SNI and `Host`.
-
 ### Methods
 
 - Add client APIs and protocol behavior for methods beyond `GET`; routing already recognizes the standard methods and configured extension methods.
@@ -90,6 +72,7 @@ Main references:
 - Add a redirect policy or explicitly leave redirects to the caller.
 - Support `Expect: 100-continue` or handle it predictably.
 - Add TLS support before claiming `https` support.
+- When TLS is added, validate the relationship between SNI and `Host`.
 
 ### Server behavior
 
@@ -110,8 +93,8 @@ Main references:
   - freshness;
   - revalidation.
 - Implement proxy behavior only if proxy mode becomes a goal:
-  - absolute-form routing;
-  - `CONNECT`;
+  - absolute-form request targets;
+  - `CONNECT` authority-form request targets;
   - `Via`;
   - hop-by-hop field removal;
   - forwarding rules.

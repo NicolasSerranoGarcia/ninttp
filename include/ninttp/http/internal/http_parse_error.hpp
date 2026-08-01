@@ -25,6 +25,8 @@ namespace ninttp::internal
         DuplicatedHeader,
         IncompatibleHeaders, //400 Bad Request,
         MissingHostHeader,
+        InvalidAuthority,
+        InvalidRequestTarget,
         DisallowedTokenChar,
         InvalidHeaderFormat, //400 probably
         UnimplementedFeature, //501

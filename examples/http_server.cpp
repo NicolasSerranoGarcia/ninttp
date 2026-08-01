@@ -7,8 +7,8 @@ using namespace ninttp;
 int server(){
     try{
         httpServer server;
-        if(!server.registerHost("localhost") ||
-           !server.registerHandler("localhost", "/", "GET", [](const Request& request, Response& response){
+        if(!server.registerHost("localhost:8080") ||
+           !server.registerHandler("localhost:8080", "/", "GET", [](const Request& request, Response& response){
                std::cout << request << std::endl;
                response.setContent("Hello, World!");
            })){

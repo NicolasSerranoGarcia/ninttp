@@ -7,8 +7,8 @@ using namespace ninttp;
 int server(){
     try{
         httpServer server;
-        if(!server.registerHost("localhost") ||
-           !server.registerHandler("localhost", "/hello", "GET", [](const Request&, Response& response){ response.setContent("Hello, World!"); })){
+        if(!server.registerHost("localhost:8080") ||
+           !server.registerHandler("localhost:8080", "/hello", "GET", [](const Request&, Response& response){ response.setContent("Hello, World!"); })){
             std::cerr << "failed to register HTTP route" << std::endl;
             return 1;
         }

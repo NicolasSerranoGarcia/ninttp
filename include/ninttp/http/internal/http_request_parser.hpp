@@ -163,7 +163,15 @@ namespace ninttp::internal
                                                                                     .what = "Request target contains whitespace or a control character"}};
                                     }
 
-                                    request.target = target;
+                                    auto parsedTarget = RequestTarget::parseOriginForm(target);
+                                    if(!parsedTarget.has_value())
+                                        return std::unexpected{httpParseError{
+                                            .type = httpParseErrorType::InvalidRequestTarget,
+                                            .parseContextText = std::string(target),
+                                            .what = parsedTarget.error().what
+                                        }};
+
+                                    request.target = std::move(parsedTarget).value();
 
                                     lastProcessedIdx = targetVersionSP+1;
                                     requestLineState = RequestLineProcessing::Version;
@@ -338,6 +346,18 @@ namespace ninttp::internal
                                 return std::unexpected{httpParseError{ .type = httpParseErrorType::MissingHostHeader,
                                                                         .parseContextText = contextFrom(0),
                                                                         .what = "Expected request to contain required host header but did not find it"}};
+
+                            if(const auto host = request.headers.find("host"); host != request.headers.end()){
+                                auto parsedAuthority = Authority::parseHost(host->second);
+                                if(!parsedAuthority.has_value())
+                                    return std::unexpected{httpParseError{
+                                        .type = httpParseErrorType::InvalidAuthority,
+                                        .parseContextText = host->second,
+                                        .what = parsedAuthority.error().what
+                                    }};
+
+                                request.authority = std::move(parsedAuthority).value();
+                            }
 
                             if(bodyFramingType != BodyFraming::Chunked && bodySize == 0){
                                 leftoverBytes.append(std::string_view{constructed}.substr(lastProcessedIdx));

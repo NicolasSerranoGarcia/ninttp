@@ -7,8 +7,8 @@ using namespace ninttp;
 int serverV6(){
     try{
         httpServer<http_1_0, IPv6Endpoint> serverV6;
-        if(!serverV6.registerHost("localhost") ||
-           !serverV6.registerHandler("localhost", "/", "GET", [](const Request& request, Response& response){
+        if(!serverV6.registerHost("localhost:8080") ||
+           !serverV6.registerHandler("localhost:8080", "/", "GET", [](const Request& request, Response& response){
                std::cout << request << std::endl;
                response.setContent("Hello, World!");
            })){

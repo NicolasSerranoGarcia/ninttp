@@ -26,12 +26,24 @@ namespace ninttp::internal{
             }
 
             std::expected<void, NinError> setHost(std::string_view host){
-                request.setHeader("host", std::string(host));
+                if(!request.setHeader("host", std::string(host)))
+                    return std::unexpected{NinError::fromHttpParseError(httpParseError{
+                        .type = httpParseErrorType::InvalidAuthority,
+                        .parseContextText = std::string(host),
+                        .what = "Invalid HTTP Host authority"
+                    })};
+
                 return {};
             }
 
             std::expected<void, NinError> setTarget(std::string_view target){
-                request.setTarget(std::string(target));
+                if(!request.setTarget(std::string(target)))
+                    return std::unexpected{NinError::fromHttpParseError(httpParseError{
+                        .type = httpParseErrorType::InvalidRequestTarget,
+                        .parseContextText = std::string(target),
+                        .what = "Invalid HTTP origin-form request target"
+                    })};
+
                 return {};
             }
 

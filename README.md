@@ -112,9 +112,9 @@ After configuration, register handlers using the same exact token:
 ```cpp
 ninttp::httpServer server;
 
-server.registerHost("localhost");
+server.registerHost("localhost:8080");
 server.registerHandler(
-    "localhost",
+    "localhost:8080",
     "/cache",
     "PURGE",
     [](const ninttp::Request& request, ninttp::Response& response) {
@@ -131,6 +131,24 @@ method's semantics safely.
 At request time, a valid method token outside the standard and configured sets receives `501 Not
 Implemented`. A supported method without a handler for an existing target receives `405 Method
 Not Allowed`, with the target's installed methods listed in `Allow`.
+
+### Request routing
+
+The server routes requests by normalized authority, encoded path, and case-sensitive method. Query
+parameters are request data and do not participate in route selection, so `/search?q=one` and
+`/search?q=two` select the same `/search` handler.
+
+An authority without a port uses the HTTP default port 80. Register a non-default port explicitly:
+
+```cpp
+server.registerHost("example.test:8080");
+server.registerHandler("example.test:8080", "/", "GET", handler);
+```
+
+The first host registered for each effective port becomes that port's default virtual host. Requests
+whose authority does not match a registered host, including requests made directly to an IP address,
+use that default. Call `setDefaultHost()` to select another already registered host. If the request's
+effective port has no default host, routing returns `421 Misdirected Request`.
 
 ### Standards basis
 

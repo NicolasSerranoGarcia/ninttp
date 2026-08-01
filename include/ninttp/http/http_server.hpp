@@ -56,6 +56,10 @@ namespace ninttp
                 return router_.registerHost(std::move(host));
             }
 
+            [[nodiscard]] bool setDefaultHost(std::string host){
+                return router_.setDefaultHost(std::move(host));
+            }
+
             [[nodiscard]] bool registerHandler(
                 const std::string& host,
                 const std::string& target,

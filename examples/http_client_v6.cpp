@@ -7,7 +7,7 @@ using namespace ninttp;
 
 int clientV6(){
     try{
-        httpClient<http_1_0, IPv6Endpoint> clientV6(IPv6Endpoint::loopback(8080), "localhost");
+        httpClient<http_1_0, IPv6Endpoint> clientV6(IPv6Endpoint::loopback(8080), "localhost:8080");
 
         std::expected<Response, NinError> got;
 

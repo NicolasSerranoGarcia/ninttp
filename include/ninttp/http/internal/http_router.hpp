@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <string>
@@ -16,25 +17,26 @@ namespace ninttp::internal{
         static_assert(isSupportedHTTP1Version(ver),
             "HTTP router only supports HTTP/1.0 and HTTP/1.1");
         using HandlerT = std::function<void(const Request&, Response&)>;
+        using MethodHandlers = std::unordered_map<std::string, HandlerT>;
+        using Targets = std::unordered_map<std::string, MethodHandlers>;
+        using Hosts = std::unordered_map<std::string, Targets>;
+
         public:
             std::expected<std::reference_wrapper<const HandlerT>, StatusCode>
             handleRequest(const Request& request) const{
-                const auto& headers = request.getHeaders();
-                const auto hostHeader = headers.find("host");
-                if(hostHeader == headers.end())
+                if(!request.getAuthority().has_value())
                     return std::unexpected{400};
 
-                const auto hostIt = hosts_.find(hostHeader->second);
-                if(hostIt == hosts_.end()){
+                const auto* targets = findTargets(*request.getAuthority());
+                if(targets == nullptr)
                     return std::unexpected{421};
-                }
 
                 if(!internal::isSupportedHttpMethod(request.getMethod())){
                     return std::unexpected{501};
                 }
 
-                const auto targetIt = hostIt->second.find(request.getTarget());
-                if(targetIt == hostIt->second.end()){
+                const auto targetIt = targets->find(request.getPath());
+                if(targetIt == targets->end()){
                     return std::unexpected{404};
                 }
 
@@ -47,17 +49,15 @@ namespace ninttp::internal{
             }
 
             [[nodiscard]] std::string getAllowedMethods(const Request& request) const{
-                const auto& headers = request.getHeaders();
-                const auto hostHeader = headers.find("host");
-                if(hostHeader == headers.end())
+                if(!request.getAuthority().has_value())
                     return {};
 
-                const auto hostIt = hosts_.find(hostHeader->second);
-                if(hostIt == hosts_.end())
+                const auto* targets = findTargets(*request.getAuthority());
+                if(targets == nullptr)
                     return {};
 
-                const auto targetIt = hostIt->second.find(request.getTarget());
-                if(targetIt == hostIt->second.end())
+                const auto targetIt = targets->find(request.getPath());
+                if(targetIt == targets->end())
                     return {};
 
                 std::string allowed;
@@ -71,10 +71,29 @@ namespace ninttp::internal{
             }
 
             [[nodiscard]] bool registerHost(std::string host){
-                if(host.empty())
+                auto authority = Authority::parseHost(host);
+                if(!authority.has_value())
                     return false;
 
-                return hosts_.try_emplace(std::move(host)).second;
+                auto key = authority->routingKey();
+                const auto [hostIt, inserted] = hosts_.try_emplace(key);
+                if(inserted)
+                    defaultHosts_.try_emplace(authority->effectivePort(), std::move(key));
+
+                return inserted;
+            }
+
+            [[nodiscard]] bool setDefaultHost(std::string host){
+                auto authority = Authority::parseHost(host);
+                if(!authority.has_value())
+                    return false;
+
+                auto key = authority->routingKey();
+                if(!hosts_.contains(key))
+                    return false;
+
+                defaultHosts_.insert_or_assign(authority->effectivePort(), std::move(key));
+                return true;
             }
 
             [[nodiscard]] bool registerHandler(
@@ -94,18 +113,41 @@ namespace ninttp::internal{
                 if(!internal::isSupportedHttpMethod(method))
                     return false;
 
-                auto hostIt = hosts_.find(host);
+                auto authority = Authority::parseHost(host);
+                if(!authority.has_value())
+                    return false;
+
+                auto parsedTarget = RequestTarget::parseOriginForm(target);
+                if(!parsedTarget.has_value() || parsedTarget->query().has_value())
+                    return false;
+
+                auto hostIt = hosts_.find(authority->routingKey());
                 if(hostIt == hosts_.end())
                     return false;
 
-                hostIt->second[target].insert_or_assign(std::move(method), std::move(callback));
+                hostIt->second[parsedTarget->path()].insert_or_assign(
+                    std::move(method),
+                    std::move(callback));
                 return true;
             }
+
         private:
-            using MethodHandlers = std::unordered_map<std::string, HandlerT>;
-            using Targets = std::unordered_map<std::string, MethodHandlers>;
-            using Hosts = std::unordered_map<std::string, Targets>;
+            [[nodiscard]] const Targets* findTargets(const Authority& authority) const{
+                if(const auto exact = hosts_.find(authority.routingKey()); exact != hosts_.end())
+                    return &exact->second;
+
+                const auto defaultIt = defaultHosts_.find(authority.effectivePort());
+                if(defaultIt == defaultHosts_.end())
+                    return nullptr;
+
+                const auto hostIt = hosts_.find(defaultIt->second);
+                if(hostIt != hosts_.end())
+                    return &hostIt->second;
+
+                return nullptr;
+            }
 
             Hosts hosts_;
+            std::unordered_map<std::uint16_t, std::string> defaultHosts_;
     };
 }

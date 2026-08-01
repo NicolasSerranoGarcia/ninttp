@@ -68,8 +68,10 @@ namespace ninttp
                 
                 internal::httpRequestBuilder<ver> builder{"GET"};
 
-                builder.setTarget(target);
-                builder.setHost(defaultHost);
+                if(auto setTarget = builder.setTarget(target); !setTarget.has_value())
+                    return std::unexpected{std::move(setTarget).error()};
+                if(auto setHost = builder.setHost(defaultHost); !setHost.has_value())
+                    return std::unexpected{std::move(setHost).error()};
 
                 auto requestStr = builder.get().toString();
 

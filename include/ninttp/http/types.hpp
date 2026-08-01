@@ -13,6 +13,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "uri.hpp"
+
 namespace ninttp::internal{
     struct HeaderField{
         std::string name;
@@ -511,7 +513,27 @@ namespace ninttp
             }
 
             [[nodiscard]] const std::string& getTarget() const noexcept{
+                return target.encoded();
+            }
+
+            [[nodiscard]] const RequestTarget& getRequestTarget() const noexcept{
                 return target;
+            }
+
+            [[nodiscard]] const std::string& getPath() const noexcept{
+                return target.path();
+            }
+
+            [[nodiscard]] const std::optional<std::string>& getQuery() const noexcept{
+                return target.query();
+            }
+
+            [[nodiscard]] const std::vector<QueryParameter>& getQueryParameters() const noexcept{
+                return target.parameters();
+            }
+
+            [[nodiscard]] const std::optional<Authority>& getAuthority() const noexcept{
+                return authority;
             }
 
             [[nodiscard]] constexpr httpVersion getVersion() const noexcept{
@@ -538,8 +560,13 @@ namespace ninttp
                 method = std::move(requestMethod);
             }
 
-            void setTarget(std::string requestTarget){
-                target = std::move(requestTarget);
+            bool setTarget(std::string requestTarget){
+                auto parsed = RequestTarget::parseOriginForm(requestTarget);
+                if(!parsed.has_value())
+                    return false;
+
+                target = std::move(parsed).value();
+                return true;
             }
 
             constexpr bool setVersion(httpVersion requestVersion) noexcept{
@@ -557,6 +584,14 @@ namespace ninttp
 
                 if(name == "content-length" || name == "transfer-encoding")
                     return false;
+
+                if(name == "host"){
+                    auto parsed = Authority::parseHost(value);
+                    if(!parsed.has_value())
+                        return false;
+
+                    authority = std::move(parsed).value();
+                }
 
                 headers.insert_or_assign(std::move(name), std::move(value));
                 return true;
@@ -666,7 +701,7 @@ namespace ninttp
 
                 requestStr += method;
                 requestStr += " ";
-                requestStr += target;
+                requestStr += target.encoded();
                 requestStr += " ";
                 requestStr += version.toHeaderString();
                 requestStr += "\r\n";
@@ -724,7 +759,7 @@ namespace ninttp
             }
 
             friend inline std::ostream& operator<<(std::ostream& os, const Request& request){
-                os << request.method << ' ' << request.target << '\n';
+                os << request.method << ' ' << request.target.encoded() << '\n';
 
                 for(const auto& header : request.headers)
                     os << header.first << ": " << header.second << '\n';
@@ -748,7 +783,8 @@ namespace ninttp
 
             void reset(){
                 method.clear();
-                target.clear();
+                target = RequestTarget{};
+                authority.reset();
                 version = http_1_0;
                 headers.clear();
                 body.reset();
@@ -757,7 +793,8 @@ namespace ninttp
             }
 
             std::string method;
-            std::string target;
+            RequestTarget target;
+            std::optional<Authority> authority;
             httpVersion version = http_1_0;
             Headers headers;
             std::optional<std::string> body;
