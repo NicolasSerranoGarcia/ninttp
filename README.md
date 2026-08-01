@@ -1,6 +1,21 @@
 # ninttp
 An easy-to-use http server-client library written in C++
 
+## Dependencies
+
+ninttp uses Boost.URL 1.81 or newer for RFC 3986 URL parsing and serialization. CMake first looks
+for an installed `Boost::url` package. If none is available, it downloads the pinned Boost 1.91.0
+release archive and builds only Boost.URL by default.
+
+To require dependencies to be installed and prevent network access during configuration:
+
+```sh
+cmake -S . -B build -DNINTTP_FETCH_BOOST_URL=OFF
+```
+
+Installed ninttp packages use `find_dependency(Boost 1.81 CONFIG COMPONENTS url)`, so installing
+ninttp does not install or bundle Boost for downstream projects.
+
 ## HTTP limits
 
 HTTP parser and server limits have safe defaults in

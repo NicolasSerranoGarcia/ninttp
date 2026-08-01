@@ -6,8 +6,13 @@
 
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+find_dependency(Boost 1.81 CONFIG COMPONENTS url)
+
 if(NOT TARGET ninttp::ninttp)
     include("${CMAKE_CURRENT_LIST_DIR}/ninttp-targets.cmake")
+    set_property(TARGET ninttp::ninttp APPEND
+        PROPERTY INTERFACE_LINK_LIBRARIES Boost::url)
 endif()
 
 check_required_components(ninttp)

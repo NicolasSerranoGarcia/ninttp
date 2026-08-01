@@ -1,6 +1,8 @@
 option(NINTTP_BUILD_TESTS "Build ninttp tests" OFF)
 option(NINTTP_BUILD_EXAMPLES "Build ninttp examples" OFF)
 option(NINTTP_FD_CLOSE_EXEC "Mark POSIX socket file descriptors close-on-exec" ON)
+option(NINTTP_FETCH_BOOST_URL
+    "Fetch a pinned Boost release when Boost.URL is not installed" ON)
 
 set(NINTTP_HTTP_EXTENSION_METHODS "" CACHE STRING
     "Semicolon-separated, case-sensitive HTTP extension method tokens supported by ninttp")

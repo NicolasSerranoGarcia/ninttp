@@ -38,6 +38,7 @@ include(cmake/utils.cmake)
 include(GNUInstallDirs)
 
 include(CMakeOptions.txt)
+include(cmake/boost_url.cmake)
 
 # PLATFORM/BACKEND DETECTION
 
