@@ -77,6 +77,46 @@ If `MaxRequestLineLength` is not explicitly configured, its default is
 recalculated from `MaxMethodLength`, `MaxRequestTargetLength`, and
 `HTTPVersionLength`.
 
+## HTTP connection policy
+
+Pass an `httpConnectionPolicy` when constructing a server to configure connection reuse without
+changing parser or routing behavior:
+
+```cpp
+ninttp::httpConnectionPolicy policy;
+policy.allowHttp10KeepAlive = false;
+policy.pipelining = ninttp::httpPipeliningPolicy::Sequential;
+policy.maxRequests = 100;
+policy.idleTimeout = std::chrono::seconds{30};
+
+ninttp::httpServer server{policy};
+```
+
+HTTP/1.1 connections persist by default unless either message selects `Connection: close`.
+HTTP/1.0 persists only when the request selects `keep-alive` and
+`allowHttp10KeepAlive` is enabled. The server emits the corresponding response option.
+
+`Sequential` pipelining preserves bytes following a complete request but does not parse the next
+request until the prior response has been completely written. This keeps responses in request
+order. `Disabled` closes after the current response when pipelined bytes have already been read.
+
+| Policy | Default | Meaning |
+| --- | ---: | --- |
+| `allowHttp10KeepAlive` | `true` | Honor explicitly negotiated HTTP/1.0 persistence |
+| `pipelining` | `Sequential` | Process pipelined exchanges serially |
+| `maxRequests` | 100 | Retire a connection after this many requests; zero is unlimited |
+| `maxPipelinedBytes` | 65536 | Maximum future-request bytes retained; zero retains none |
+| `idleTimeout` | 60 s | Wait for the first byte of the next request |
+| `incompleteRequestTimeout` | 15 s | Complete a request after its first byte |
+| `responseTimeout` | 30 s | Queue a response after a request becomes available |
+| `writeTimeout` | 30 s | Make progress writing a response |
+| `gracefulCloseTimeout` | 5 s | Wait for peer EOF after shutting down transmission |
+
+A non-positive duration disables that deadline. Connections expose `deadline()` and
+`onTimeout(now)` so a readiness scheduler can own timer waiting. On graceful closure, the server
+finishes the response, shuts down the socket's transmission direction, drains peer input, and then
+retires the connection on peer EOF or the graceful-close deadline.
+
 ## HTTP extension methods
 
 HTTP method names are case-sensitive tokens. ninttp recognizes the standard method names with

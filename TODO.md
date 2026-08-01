@@ -17,16 +17,6 @@ Main references:
 - RFC 9111: HTTP Caching
 - RFC 9112: HTTP/1.1
 
-### HTTP/1.1 connection behavior
-
-- Apply HTTP version and `Connection` header persistence rules on top of the reusable connection exchange state machine.
-  - Keep HTTP/1.1 connections persistent by default.
-  - Honor request and response `Connection: close`.
-  - Decide whether to support HTTP/1.0 keep-alive compatibility and implement it consistently if so.
-- Define the public pipelining policy. Connections already preserve parser leftovers and serialize request/response exchanges, but queue limits and rejection behavior remain unspecified.
-- Add read, write, idle, and incomplete-message timeouts.
-- Define socket half-close and connection error behavior in protocol terms.
-
 ### Methods
 
 - Add client APIs and protocol behavior for methods beyond `GET`; routing already recognizes the standard methods and configured extension methods.
@@ -40,7 +30,6 @@ Main references:
   - `411 Length Required`;
   - `413 Content Too Large`;
   - `431 Request Header Fields Too Large`.
-- Close the connection after unrecoverable framing errors.
 - Avoid response bodies for methods/status codes that forbid them.
 
 ### Header semantics
@@ -48,7 +37,6 @@ Main references:
 - Add case-insensitive header lookup helpers.
 - Add structured helpers for important fields:
   - `Host`;
-  - `Connection`;
   - `Content-Length`;
   - `Transfer-Encoding`;
   - `TE`;
@@ -77,7 +65,6 @@ Main references:
 ### Server behavior
 
 - Complete readiness-based concurrent connection scheduling; accepted sockets are already nonblocking and each connection owns its parser, buffers, and exchange state.
-- Add keep-alive lifetime and request-count policies.
 - If static/file responses are added, support:
   - MIME type;
   - content length;

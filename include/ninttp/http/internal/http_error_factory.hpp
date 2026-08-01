@@ -9,17 +9,17 @@ namespace ninttp::internal{
         static_assert(isSupportedHTTP1Version(ver),
             "HTTP error factory only supports HTTP/1.0 and HTTP/1.1");
         public:
-            static std::string fromStatusCode(StatusCode code){
+            static Response fromStatusCode(StatusCode code){
                 Response response{ver, code};
                 response.clearContent();
-                return response.toString();
+                return response;
             }
 
-            static std::string fromParseErrorType(httpParseErrorType type){
+            static Response fromParseErrorType(httpParseErrorType type){
                 return fromStatusCode(statusCodeFromParseError(type));
             }
 
-            static std::string fromParseError(httpParseError err){
+            static Response fromParseError(httpParseError err){
                 return fromParseErrorType(err.type);
             }
 

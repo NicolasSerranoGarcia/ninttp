@@ -16,6 +16,7 @@
 #include "../socket/socket.hpp"
 #include "../socket/traits.hpp"
 #include "internal/http_error_factory.hpp"
+#include "http_connection_policy.hpp"
 #include "http_limits.hpp"
 #include "internal/http_router.hpp"
 #include "types.hpp"
@@ -41,8 +42,8 @@ namespace ninttp
              *
              * @throws NinError with .type = Socket if listener socket construction fails.
              */
-            httpServer() try
-                : listenerSock_(Protocol::Tcp) {
+            explicit httpServer(httpConnectionPolicy connectionPolicy = {}) try
+                : connectionPolicy_(connectionPolicy), listenerSock_(Protocol::Tcp) {
                     if constexpr(concepts::NonblockingConfigurable<decltype(listenerSock_)>){
                         if(auto set = listenerSock_.setNonblocking(true); !set)
                             throw set.error();
@@ -86,10 +87,25 @@ namespace ninttp
                         if(err.category() != SocketErrorCategory::Blocks && err.category() != SocketErrorCategory::Interrupted)
                             std::cerr << err.what() << std::endl;
                     } else{
-                        clientConnections_.emplace_back(std::move(acceptRes).value());
+                        clientConnections_.emplace_back(
+                            std::move(acceptRes).value(),
+                            connectionPolicy_);
                     }
 
                     for(auto& connection : clientConnections_){
+                        if(auto timedOut = connection.onTimeout(); !timedOut.has_value()){
+                            handleConnectionError(connection, std::move(timedOut).error());
+                            continue;
+                        }
+
+                        if(connection.interests().write){
+                            auto writable = connection.onWritable();
+                            if(!writable.has_value()){
+                                handleConnectionError(connection, std::move(writable).error());
+                                continue;
+                            }
+                        }
+
                         auto readable = connection.onReadable();
                         if(!readable.has_value()){
                             handleConnectionError(connection, std::move(readable).error());
@@ -134,13 +150,9 @@ namespace ninttp
                         if(response.getBodyFraming() == ResponseBodyFraming::None)
                             response.clearContent();
 
-                        const auto responseFraming = response.getBodyFraming();
                         const bool queued = connection.queueResponse(response);
                         assert(queued);
                         (void)queued;
-
-                        if(responseFraming == ResponseBodyFraming::ConnectionClose)
-                            connection.closeAfterWrite();
 
                         if(auto sent = connection.onWritable(); !sent.has_value())
                             handleConnectionError(connection, std::move(sent).error());
@@ -181,14 +193,7 @@ namespace ninttp
                 }
 
                 auto errorResponse = internal::httpErrorFactory<ver>::fromParseErrorType(*error.parseErrorType);
-                if(!connection.queueOutput(errorResponse)){
-                    connection.closeAfterWrite();
-                    return;
-                }
-
-                if(auto finished = connection.finishResponse(); !finished.has_value()){
-                    std::clog << "[http.server] connection error while finishing error response: "
-                              << finished.error().what << '\n';
+                if(!connection.queueResponse(std::move(errorResponse))){
                     connection.closeAfterWrite();
                     return;
                 }
@@ -202,11 +207,9 @@ namespace ninttp
 
             std::expected<void, NinError> sendStatus(ConnectionT& connection, StatusCode status){
                 auto response = internal::httpErrorFactory<ver>::fromStatusCode(status);
-                const bool queued = connection.queueOutput(response);
+                const bool queued = connection.queueResponse(std::move(response));
                 assert(queued);
                 (void)queued;
-                if(auto finished = connection.finishResponse(); !finished.has_value())
-                    return std::unexpected{std::move(finished).error()};
                 if(auto sent = connection.onWritable(); !sent.has_value())
                     return std::unexpected{std::move(sent).error()};
 
@@ -230,6 +233,7 @@ namespace ninttp
                 return {};
             }
 
+            httpConnectionPolicy connectionPolicy_;
             ListenerSocket<EndpointT, StreamSocket<EndpointT>> listenerSock_;
 
             internal::httpRouter<ver> router_;

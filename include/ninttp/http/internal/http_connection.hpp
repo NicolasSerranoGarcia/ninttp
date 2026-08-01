@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <concepts>
 #include <cstddef>
 #include <expected>
@@ -14,6 +15,7 @@
 #include "../../error/nin_error.hpp"
 #include "../../socket/error/socket_error_category.hpp"
 #include "../../socket/socket.hpp"
+#include "../http_connection_policy.hpp"
 #include "../http_limits.hpp"
 #include "../types.hpp"
 #include "http_request_parser.hpp"
@@ -23,6 +25,7 @@ namespace ninttp::internal
     enum class ConnectionLifecycle{
         Open,
         ClosingAfterWrite,
+        DrainingPeer,
         Closed
     };
 
@@ -40,6 +43,14 @@ namespace ninttp::internal
         constexpr bool operator==(const ConnectionInterests&) const noexcept = default;
     };
 
+    enum class ConnectionTimeoutType{
+        Idle,
+        IncompleteRequest,
+        Response,
+        Write,
+        GracefulClose
+    };
+
     // Internal, scheduler-neutral state for one accepted HTTP/1.x TCP connection.
     template<
         httpVersion ver = http_1_0,
@@ -52,8 +63,17 @@ namespace ninttp::internal
             "HTTP server connections only accept IPv4 or IPv6 endpoints");
 
         public:
-            explicit httpServerTCPConnection(StreamT stream) noexcept
-                : stream_(std::move(stream)){}
+            using Clock = std::chrono::steady_clock;
+            using TimePoint = Clock::time_point;
+
+            explicit httpServerTCPConnection(
+                StreamT stream,
+                httpConnectionPolicy policy = {},
+                TimePoint now = Clock::now()) noexcept
+                : stream_(std::move(stream)),
+                  policy_(policy),
+                  phaseStartedAt_(now),
+                  lastActivityAt_(now){}
 
             httpServerTCPConnection(const httpServerTCPConnection&) = delete;
             httpServerTCPConnection& operator=(const httpServerTCPConnection&) = delete;
@@ -62,9 +82,13 @@ namespace ninttp::internal
 
             [[nodiscard]] ConnectionInterests interests() const noexcept{
                 return ConnectionInterests{
-                    .read = lifecycle_ == ConnectionLifecycle::Open &&
-                        phase_ == ConnectionExchangePhase::ReadingRequest,
-                    .write = lifecycle_ != ConnectionLifecycle::Closed && hasPendingOutput()
+                    .read = lifecycle_ == ConnectionLifecycle::DrainingPeer ||
+                        (lifecycle_ == ConnectionLifecycle::Open &&
+                            phase_ == ConnectionExchangePhase::ReadingRequest),
+                    .write = lifecycle_ != ConnectionLifecycle::Closed &&
+                        lifecycle_ != ConnectionLifecycle::DrainingPeer &&
+                        (hasPendingOutput() ||
+                            lifecycle_ == ConnectionLifecycle::ClosingAfterWrite)
                 };
             }
 
@@ -95,8 +119,81 @@ namespace ninttp::internal
                 return request;
             }
 
+            [[nodiscard]] std::optional<TimePoint> deadline() const noexcept{
+                switch(lifecycle_){
+                    case ConnectionLifecycle::Closed:
+                        return std::nullopt;
+                    case ConnectionLifecycle::DrainingPeer:
+                        return addTimeout(closeStartedAt_, policy_.gracefulCloseTimeout);
+                    case ConnectionLifecycle::ClosingAfterWrite:
+                        return addTimeout(lastActivityAt_, policy_.writeTimeout);
+                    case ConnectionLifecycle::Open:
+                        break;
+                }
+
+                switch(phase_){
+                    case ConnectionExchangePhase::ReadingRequest:
+                        if(requestStartedAt_.has_value())
+                            return addTimeout(*requestStartedAt_, policy_.incompleteRequestTimeout);
+                        return addTimeout(lastActivityAt_, policy_.idleTimeout);
+                    case ConnectionExchangePhase::RequestReady:
+                    case ConnectionExchangePhase::AwaitingResponse:
+                        return addTimeout(phaseStartedAt_, policy_.responseTimeout);
+                    case ConnectionExchangePhase::WritingResponse:
+                        return addTimeout(lastActivityAt_, policy_.writeTimeout);
+                }
+
+                return std::nullopt;
+            }
+
+            [[nodiscard]] std::optional<ConnectionTimeoutType>
+            expiredTimeout(TimePoint now) const noexcept{
+                const auto currentDeadline = deadline();
+                if(!currentDeadline.has_value() || now < *currentDeadline)
+                    return std::nullopt;
+
+                if(lifecycle_ == ConnectionLifecycle::DrainingPeer)
+                    return ConnectionTimeoutType::GracefulClose;
+                if(lifecycle_ == ConnectionLifecycle::ClosingAfterWrite ||
+                    phase_ == ConnectionExchangePhase::WritingResponse)
+                    return ConnectionTimeoutType::Write;
+                if(phase_ == ConnectionExchangePhase::ReadingRequest)
+                    return requestStartedAt_.has_value()
+                        ? ConnectionTimeoutType::IncompleteRequest
+                        : ConnectionTimeoutType::Idle;
+
+                return ConnectionTimeoutType::Response;
+            }
+
+            [[nodiscard]] std::expected<bool, NinError>
+            onTimeout(TimePoint now = Clock::now()){
+                const auto timeout = expiredTimeout(now);
+                if(!timeout.has_value())
+                    return false;
+
+                if(*timeout == ConnectionTimeoutType::GracefulClose ||
+                    *timeout == ConnectionTimeoutType::Write){
+                    lifecycle_ = ConnectionLifecycle::Closed;
+                    return true;
+                }
+
+                auto closed = beginGracefulClose(now);
+                if(!closed.has_value())
+                    return std::unexpected{std::move(closed).error()};
+
+                return true;
+            }
+
             [[nodiscard]] std::size_t pendingOutputBytes() const noexcept{
                 return outputBuf_.size() - outputOffset_;
+            }
+
+            [[nodiscard]] std::size_t requestsReceived() const noexcept{
+                return requestsReceived_;
+            }
+
+            [[nodiscard]] bool requestWillPersist() const noexcept{
+                return requestPersistent_ && !closeAfterResponse_;
             }
 
             // Queues one streaming segment. finishResponse() marks the final segment.
@@ -107,18 +204,35 @@ namespace ninttp::internal
                     return false;
 
                 outputBuf_.append(bytes);
+                if(phase_ != ConnectionExchangePhase::WritingResponse){
+                    phaseStartedAt_ = Clock::now();
+                    lastActivityAt_ = phaseStartedAt_;
+                }
                 phase_ = ConnectionExchangePhase::WritingResponse;
                 return true;
             }
 
             // A serialized Response is a complete response, unlike raw streaming output.
-            [[nodiscard]] bool queueResponse(const Response& response){
+            [[nodiscard]] bool queueResponse(Response response){
                 if(lifecycle_ == ConnectionLifecycle::Closed || responseFinished_ ||
                     phase_ != ConnectionExchangePhase::AwaitingResponse)
                     return false;
 
+                if(response.hasConnectionOption("close") ||
+                    response.getBodyFraming() == ResponseBodyFraming::ConnectionClose)
+                    closeAfterResponse_ = true;
+
+                if(closeAfterResponse_){
+                    response.setHeader("Connection", "close");
+                    lifecycle_ = ConnectionLifecycle::ClosingAfterWrite;
+                } else if(!usesHTTP11Rules(response.getVersion())){
+                    response.setHeader("Connection", "keep-alive");
+                }
+
                 outputBuf_.append(response.toString());
                 responseFinished_ = true;
+                phaseStartedAt_ = Clock::now();
+                lastActivityAt_ = phaseStartedAt_;
                 phase_ = ConnectionExchangePhase::WritingResponse;
                 return true;
             }
@@ -130,6 +244,8 @@ namespace ninttp::internal
                     return {};
 
                 responseFinished_ = true;
+                if(closeAfterResponse_)
+                    lifecycle_ = ConnectionLifecycle::ClosingAfterWrite;
                 if(hasPendingOutput())
                     return {};
 
@@ -140,14 +256,17 @@ namespace ninttp::internal
                 if(lifecycle_ == ConnectionLifecycle::Closed)
                     return;
 
-                lifecycle_ = hasPendingOutput()
-                    ? ConnectionLifecycle::ClosingAfterWrite
-                    : ConnectionLifecycle::Closed;
+                closeAfterResponse_ = true;
+                pendingInput_.clear();
+                lifecycle_ = ConnectionLifecycle::ClosingAfterWrite;
             }
 
             [[nodiscard]] std::expected<void, NinError> onReadable(){
                 if(!interests().read)
                     return {};
+
+                if(lifecycle_ == ConnectionLifecycle::DrainingPeer)
+                    return drainPeerInput();
 
                 std::array<char, limits::ReadBufferSize> buffer{};
 
@@ -166,10 +285,17 @@ namespace ninttp::internal
 
                     if(*received == 0){
                         lifecycle_ = ConnectionLifecycle::Closed;
+                        if(!requestStartedAt_.has_value())
+                            return {};
+
                         return std::unexpected{NinError::fromSocketCategory(
                             SocketErrorCategory::ConnectionClosed,
                             "Connection closed before a complete request was received")};
                     }
+
+                    lastActivityAt_ = Clock::now();
+                    if(!requestStartedAt_.has_value())
+                        requestStartedAt_ = lastActivityAt_;
 
                     std::string input(buffer.data(), *received);
                     auto processed = processInput(input);
@@ -210,14 +336,14 @@ namespace ninttp::internal
                     }
 
                     outputOffset_ += *sent;
+                    lastActivityAt_ = Clock::now();
                 }
 
                 outputBuf_.clear();
                 outputOffset_ = 0;
 
                 if(lifecycle_ == ConnectionLifecycle::ClosingAfterWrite){
-                    lifecycle_ = ConnectionLifecycle::Closed;
-                    return {};
+                    return beginGracefulClose(Clock::now());
                 }
 
                 if(responseFinished_)
@@ -235,14 +361,73 @@ namespace ninttp::internal
             }
 
         private:
+            [[nodiscard]] static std::optional<TimePoint> addTimeout(
+                TimePoint start,
+                std::chrono::milliseconds timeout) noexcept
+            {
+                if(timeout <= std::chrono::milliseconds::zero())
+                    return std::nullopt;
+                return start + timeout;
+            }
+
             [[nodiscard]] bool hasPendingOutput() const noexcept{
                 return outputOffset_ < outputBuf_.size();
+            }
+
+            [[nodiscard]] std::expected<void, NinError>
+            beginGracefulClose(TimePoint now){
+                if(lifecycle_ == ConnectionLifecycle::Closed ||
+                    lifecycle_ == ConnectionLifecycle::DrainingPeer)
+                    return {};
+
+                if constexpr(requires(StreamT& stream){
+                    stream.shutdown(ShutdownPolicy::SHUT_TRANSMISSIONS);
+                }){
+                    auto shutdown = stream_.shutdown(ShutdownPolicy::SHUT_TRANSMISSIONS);
+                    if(!shutdown.has_value()){
+                        lifecycle_ = ConnectionLifecycle::Closed;
+                        return std::unexpected{NinError::fromSocketError(shutdown.error())};
+                    }
+                }
+
+                lifecycle_ = ConnectionLifecycle::DrainingPeer;
+                closeStartedAt_ = now;
+                return {};
+            }
+
+            [[nodiscard]] std::expected<void, NinError> drainPeerInput(){
+                std::array<char, limits::ReadBufferSize> buffer{};
+                while(lifecycle_ == ConnectionLifecycle::DrainingPeer){
+                    auto received = stream_.receive(buffer);
+                    if(!received.has_value()){
+                        const auto category = received.error().category();
+                        if(category == SocketErrorCategory::Blocks)
+                            return {};
+                        if(category == SocketErrorCategory::Interrupted)
+                            continue;
+
+                        lifecycle_ = ConnectionLifecycle::Closed;
+                        return std::unexpected{NinError::fromSocketError(received.error())};
+                    }
+
+                    if(*received == 0){
+                        lifecycle_ = ConnectionLifecycle::Closed;
+                        return {};
+                    }
+
+                    lastActivityAt_ = Clock::now();
+                }
+
+                return {};
             }
 
             std::expected<void, NinError> processInput(const std::string& input){
                 auto parsed = parser_.append(input);
                 if(!parsed.has_value()){
                     lifecycle_ = ConnectionLifecycle::ClosingAfterWrite;
+                    requestPersistent_ = false;
+                    closeAfterResponse_ = true;
+                    pendingInput_.clear();
                     phase_ = ConnectionExchangePhase::AwaitingResponse;
                     return std::unexpected{NinError::fromHttpParseError(parsed.error())};
                 }
@@ -253,13 +438,46 @@ namespace ninttp::internal
                 completedRequest_.emplace(parser_.getRequest());
                 pendingInput_ = parser_.getLeftoverBytes();
                 parser_.reset();
+                requestStartedAt_.reset();
+                configurePersistence(*completedRequest_);
+                ++requestsReceived_;
+
+                const bool requestLimitReached = policy_.maxRequests != 0 &&
+                    requestsReceived_ >= policy_.maxRequests;
+                const bool pipelineDisabled =
+                    policy_.pipelining == httpPipeliningPolicy::Disabled;
+                const bool pipelineTooLarge =
+                    pendingInput_.size() > policy_.maxPipelinedBytes;
+
+                if(requestLimitReached ||
+                    (!pendingInput_.empty() && (pipelineDisabled || pipelineTooLarge))){
+                    closeAfterResponse_ = true;
+                    pendingInput_.clear();
+                }
+
+                phaseStartedAt_ = Clock::now();
                 phase_ = ConnectionExchangePhase::RequestReady;
                 return {};
+            }
+
+            void configurePersistence(const Request& request) noexcept{
+                if(request.hasConnectionOption("close")){
+                    requestPersistent_ = false;
+                } else if(usesHTTP11Rules(request.getVersion())){
+                    requestPersistent_ = true;
+                } else{
+                    requestPersistent_ = policy_.allowHttp10KeepAlive &&
+                        request.hasConnectionOption("keep-alive");
+                }
+
+                closeAfterResponse_ = !requestPersistent_;
             }
 
             std::expected<void, NinError> completeResponseExchange(){
                 responseFinished_ = false;
                 phase_ = ConnectionExchangePhase::ReadingRequest;
+                phaseStartedAt_ = Clock::now();
+                lastActivityAt_ = phaseStartedAt_;
 
                 if(pendingInput_.empty())
                     return {};
@@ -270,6 +488,7 @@ namespace ninttp::internal
             }
 
             StreamT stream_;
+            httpConnectionPolicy policy_;
             ConnectionLifecycle lifecycle_ = ConnectionLifecycle::Open;
             ConnectionExchangePhase phase_ = ConnectionExchangePhase::ReadingRequest;
             httpRequestParser<ver> parser_;
@@ -280,6 +499,14 @@ namespace ninttp::internal
             std::string outputBuf_;
             std::size_t outputOffset_ = 0;
             bool responseFinished_ = false;
+            bool requestPersistent_ = false;
+            bool closeAfterResponse_ = false;
+            std::size_t requestsReceived_ = 0;
+
+            TimePoint phaseStartedAt_;
+            TimePoint lastActivityAt_;
+            std::optional<TimePoint> requestStartedAt_;
+            TimePoint closeStartedAt_{};
     };
 
     // Leave a backdoor for future connection transports.

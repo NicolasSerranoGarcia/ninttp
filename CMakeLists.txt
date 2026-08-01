@@ -68,6 +68,7 @@ set(public_headers
     include/ninttp/socket/internal/backends/winsock.hpp
     include/ninttp/http/http_client.hpp
     include/ninttp/http/http_server.hpp
+    include/ninttp/http/http_connection_policy.hpp
     include/ninttp/http/http_method_config.hpp
     include/ninttp/http/uri.hpp
     include/ninttp/http/types.hpp

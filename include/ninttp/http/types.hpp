@@ -16,6 +16,52 @@
 #include "uri.hpp"
 
 namespace ninttp::internal{
+    [[nodiscard]] inline bool asciiCaseInsensitiveEquals(
+        std::string_view left,
+        std::string_view right) noexcept
+    {
+        if(left.size() != right.size())
+            return false;
+
+        for(std::size_t index = 0; index < left.size(); ++index){
+            auto leftCharacter = left[index];
+            auto rightCharacter = right[index];
+            if(leftCharacter >= 'A' && leftCharacter <= 'Z')
+                leftCharacter = static_cast<char>(leftCharacter + ('a' - 'A'));
+            if(rightCharacter >= 'A' && rightCharacter <= 'Z')
+                rightCharacter = static_cast<char>(rightCharacter + ('a' - 'A'));
+
+            if(leftCharacter != rightCharacter)
+                return false;
+        }
+
+        return true;
+    }
+
+    [[nodiscard]] inline bool headerValueContainsToken(
+        std::string_view value,
+        std::string_view expected) noexcept
+    {
+        while(!value.empty()){
+            const auto comma = value.find(',');
+            auto token = value.substr(0, comma);
+
+            while(!token.empty() && (token.front() == ' ' || token.front() == '\t'))
+                token.remove_prefix(1);
+            while(!token.empty() && (token.back() == ' ' || token.back() == '\t'))
+                token.remove_suffix(1);
+
+            if(asciiCaseInsensitiveEquals(token, expected))
+                return true;
+
+            if(comma == std::string_view::npos)
+                break;
+            value.remove_prefix(comma + 1);
+        }
+
+        return false;
+    }
+
     struct HeaderField{
         std::string name;
         std::string value;
@@ -217,6 +263,12 @@ namespace ninttp
 
             [[nodiscard]] constexpr ResponseBodyFraming getBodyFraming() const noexcept{
                 return bodyFraming;
+            }
+
+            [[nodiscard]] bool hasConnectionOption(std::string_view option) const noexcept{
+                const auto connection = findHeader("connection");
+                return connection != headers.end() &&
+                    internal::headerValueContainsToken(connection->value, option);
             }
 
             constexpr bool setVersion(httpVersion responseVersion) noexcept{
@@ -554,6 +606,12 @@ namespace ninttp
 
             [[nodiscard]] constexpr RequestBodyFraming getBodyFraming() const noexcept{
                 return bodyFraming;
+            }
+
+            [[nodiscard]] bool hasConnectionOption(std::string_view option) const noexcept{
+                const auto connection = headers.find("connection");
+                return connection != headers.end() &&
+                    internal::headerValueContainsToken(connection->second, option);
             }
 
             void setMethod(std::string requestMethod){
