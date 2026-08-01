@@ -34,6 +34,10 @@ add_executable(ninttp_http_connection_tests
     http_connection_tests.cpp
 )
 
+add_executable(ninttp_http_client_tests
+    http_client_tests.cpp
+)
+
 target_link_libraries(ninttp_ninendian_tests
     PRIVATE
         ninttp::ninttp
@@ -75,6 +79,11 @@ target_link_libraries(ninttp_http_response_parser_tests
 )
 
 target_link_libraries(ninttp_http_connection_tests
+    PRIVATE
+        ninttp::ninttp
+)
+
+target_link_libraries(ninttp_http_client_tests
     PRIVATE
         ninttp::ninttp
 )
@@ -129,4 +138,9 @@ add_test(
 add_test(
     NAME ninttp.http.connection
     COMMAND ninttp_http_connection_tests
+)
+
+add_test(
+    NAME ninttp.http.client
+    COMMAND ninttp_http_client_tests
 )

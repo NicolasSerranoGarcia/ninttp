@@ -5,9 +5,10 @@
 #include <concepts>
 #include <cstddef>
 #include <expected>
-#include <iostream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <utility>
 
 #include "../endpoints.hpp"
 #include "../error/nin_error.hpp"
@@ -36,34 +37,26 @@ namespace ninttp
              *
              * @throws NinError with .type = Socket if stream socket construction or connection fails.
              */
-            httpClient(const EndpointT& peer, const std::string& host)
-                : streamSock_(Protocol::Tcp)
+            httpClient(const EndpointT& peer, std::string_view host) try
+                : defaultHost(validatedHostOrThrow(host)),
+                  streamSock_(Protocol::Tcp)
             {
                 if(const auto res = streamSock_.connect(peer); !res.has_value())
                     throw NinError::fromSocketError(res.error());
-
-                if(host.empty())
-                    throw std::out_of_range("expected host value parameter to contain a non-empty string");
-
-                if(host.size() > limits::MaxFieldValueLength)
-                    throw std::out_of_range("Host value exceeds maximum header field length of 256");
-
-                defaultHost = host;
+            }
+            catch(const SocketError& error){
+                throw NinError::fromSocketError(error);
             }
 
-            std::expected<void, std::out_of_range> setDefaultHost(const std::string& host){
+            std::expected<void, NinError> setDefaultHost(std::string_view host){
+                auto validated = validateHost(host);
+                if(!validated.has_value())
+                    return std::unexpected{std::move(validated).error()};
 
-                if(host.empty())
-                    return std::unexpected(std::out_of_range("expected host value parameter to contain a non-empty string"));
-
-                if(host.size() > limits::MaxFieldValueLength)
-                    return std::unexpected(std::out_of_range("host value exceeds maximum header field length of 256"));
-
-                defaultHost = host;
+                defaultHost = std::move(validated).value();
                 return {};
             }
 
-            //TODO: validate target for syntax or disallowed characters
             std::expected<Response, NinError> GET(const std::string& target){
                 
                 internal::httpRequestBuilder<ver> builder{"GET"};
@@ -82,6 +75,36 @@ namespace ninttp
             }
 
         private:
+            [[nodiscard]] static std::expected<std::string, NinError>
+            validateHost(std::string_view host){
+                if(host.size() > limits::MaxFieldValueLength)
+                    return invalidAuthority(host, "Host authority exceeds the configured field value limit");
+
+                auto authority = Authority::parseHost(host);
+                if(!authority.has_value())
+                    return invalidAuthority(host, authority.error().what);
+
+                return authority->encoded();
+            }
+
+            [[nodiscard]] static std::string validatedHostOrThrow(std::string_view host){
+                auto validated = validateHost(host);
+                if(!validated.has_value())
+                    throw std::move(validated).error();
+
+                return std::move(validated).value();
+            }
+
+            [[nodiscard]] static std::unexpected<NinError>
+            invalidAuthority(std::string_view host, std::string message){
+                return std::unexpected{NinError::fromHttpParseError(internal::httpParseError{
+                    .type = internal::httpParseErrorType::InvalidAuthority,
+                    .parseContextText = std::string{host},
+                    .what = std::move(message)
+                })};
+            }
+
+            std::string defaultHost;
             StreamSocket<EndpointT> streamSock_;
 
             std::expected<Response, NinError> parseResponse(StreamSocket<EndpointT>& sock){
@@ -93,8 +116,6 @@ namespace ninttp
                 auto htppParseStatus = internal::httpParseStatus::NeedData;
                 do{
                     auto res = sock.receive(buf);
-
-                    std::clog << "[http.client] receive returned\n";
 
                     if(!res.has_value()){
                         const SocketError& err = res.error();
@@ -115,7 +136,6 @@ namespace ninttp
                     std::size_t read = res.value();
 
                     if(read == 0){
-                        std::clog << "[http.client] sender sent 0\n";
                         auto finished = parser.finish();
                         if(!finished.has_value())
                             return std::unexpected{NinError::fromHttpParseError(finished.error())};
@@ -124,8 +144,6 @@ namespace ninttp
                     }
 
                     got.append(buf.data(), read);
-
-                    std::clog << "[http.client] received " << got.size() << " bytes:\n" << got << '\n';
 
                     auto parseRes = parser.append(got);
                     got.clear();
@@ -142,9 +160,5 @@ namespace ninttp
 
                 return parser.getResponse();
             }
-
-        private:
-            std::string defaultHost;
-
     };
 } // namespace ninttp

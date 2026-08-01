@@ -115,6 +115,29 @@ int main(){
 
     {
         httpResponseParser<http_1_1> parser{"GET"};
+        const auto result = appendOneByteAtATime(
+            parser,
+            "HTTP/1.1 100 Continue\r\n"
+            "Request-Id: first\r\n"
+            "\r\n"
+            "HTTP/1.1 103 Early Hints\r\n"
+            "Link: </style.css>; rel=preload\r\n"
+            "\r\n"
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 5\r\n"
+            "\r\n"
+            "hello");
+
+        NINTTP_CHECK(result == httpParseStatus::Done);
+        const auto response = parser.getResponse();
+        NINTTP_CHECK(response.getStatusCode() == 200);
+        NINTTP_CHECK(response.getContent() == "hello");
+        NINTTP_CHECK(!response.getHeader("Request-Id").has_value());
+        NINTTP_CHECK(!response.getHeader("Link").has_value());
+    }
+
+    {
+        httpResponseParser<http_1_1> parser{"GET"};
         const auto result = parser.append(
             "HTTP/1.1 101 Switching Protocols\r\n"
             "Connection: Upgrade\r\n"

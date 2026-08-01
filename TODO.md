@@ -56,9 +56,6 @@ Main references:
 
 ### Client behavior
 
-- Validate client `Host` authorities and request targets; generated requests already include `Host`.
-- Add a redirect policy or explicitly leave redirects to the caller.
-- Support `Expect: 100-continue` or handle it predictably.
 - Add TLS support before claiming `https` support.
 - When TLS is added, validate the relationship between SNI and `Host`.
 

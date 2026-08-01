@@ -117,6 +117,23 @@ A non-positive duration disables that deadline. Connections expose `deadline()` 
 finishes the response, shuts down the socket's transmission direction, drains peer input, and then
 retires the connection on peer EOF or the graceful-close deadline.
 
+## HTTP client behavior
+
+`httpClient` validates its default Host authority before opening or connecting its socket. Each
+request target is parsed as HTTP origin-form before the request is sent. Invalid values are reported
+as `NinErrorType::Parse` errors.
+
+Redirects are returned to the caller and are never followed automatically. Inspect `Location`
+case-insensitively through `response.getHeader("Location")`. The client currently connects to a
+caller-provided numeric endpoint and has no DNS or endpoint-migration policy, so automatically
+following an absolute redirect could otherwise send the new authority to the old server.
+
+The current client only emits bodyless `GET` requests and therefore never generates
+`Expect: 100-continue`. It consumes non-switching informational responses, including `100 Continue`
+and `103 Early Hints`, until the final response arrives. `101 Switching Protocols` remains terminal.
+When body-sending methods are added, supporting `100-continue` will require sending headers first,
+waiting for either `100` or a final response, and only then deciding whether to send the body.
+
 ## HTTP extension methods
 
 HTTP method names are case-sensitive tokens. ninttp recognizes the standard method names with

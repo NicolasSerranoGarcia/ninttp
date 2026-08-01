@@ -217,16 +217,20 @@ namespace ninttp::internal
                                 response.headers.push_back(std::move(parsedHeader));
                             }
 
-                            const bool statusForbidsBody =
-                                response.statusCode / 100 == 1 ||
-                                response.statusCode == 204 ||
-                                response.statusCode == 304;
-
                             if(response.statusCode == 101){
                                 bodyFramingType = BodyFraming::Tunnel;
                                 response.bodyFraming = ResponseBodyFraming::Tunnel;
                                 return finishWithLeftovers();
                             }
+
+                            if(response.statusCode / 100 == 1){
+                                prepareForNextResponse();
+                                break;
+                            }
+
+                            const bool statusForbidsBody =
+                                response.statusCode == 204 ||
+                                response.statusCode == 304;
 
                             if(responseToHead || statusForbidsBody){
                                 bodyFramingType = BodyFraming::None;
@@ -492,6 +496,23 @@ namespace ninttp::internal
             }
 
         private:
+            void prepareForNextResponse(){
+                constructed.erase(0, lastProcessedIdx);
+                lastProcessedIdx = 0;
+                bodySize = 0;
+                remaining = 0;
+                state = Processing::StatusLine;
+                bodyFramingType = BodyFraming::None;
+                chunkedEncodingIsCurrentlyLength = true;
+                chunkedEncodingLastLength = 0;
+                chunkedEncodingRemainingBytesForConsume = 0;
+                headerSectionLength = 0;
+                headerCount = 0;
+                trailerSectionLength = 0;
+                trailerCount = 0;
+                response.reset();
+            }
+
             struct ChunkExtensionView{
                 std::string_view name;
                 std::string_view rawValue;

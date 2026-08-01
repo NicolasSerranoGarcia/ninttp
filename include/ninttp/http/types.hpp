@@ -253,6 +253,15 @@ namespace ninttp
                 return headers;
             }
 
+            [[nodiscard]] std::optional<std::string_view>
+            getHeader(std::string_view name) const noexcept{
+                const auto header = findHeader(name);
+                if(header == headers.end())
+                    return std::nullopt;
+
+                return header->value;
+            }
+
             [[nodiscard]] const std::optional<std::string>& getContent() const noexcept{
                 return body;
             }
@@ -594,6 +603,17 @@ namespace ninttp
 
             [[nodiscard]] const Headers& getHeaders() const noexcept{
                 return headers;
+            }
+
+            [[nodiscard]] std::optional<std::string_view>
+            getHeader(std::string_view name) const{
+                std::string normalized{name};
+                normalizeHeaderName(normalized);
+                const auto header = headers.find(normalized);
+                if(header == headers.end())
+                    return std::nullopt;
+
+                return header->second;
             }
 
             [[nodiscard]] const std::optional<std::string>& getContent() const noexcept{
