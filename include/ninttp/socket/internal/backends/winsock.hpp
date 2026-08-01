@@ -11,8 +11,18 @@
 
 #pragma once
 
+#if !defined(NOMINMAX)
+    #define NOMINMAX
+    #define NINTTP_INTERNAL_UNDEFINE_NOMINMAX
+#endif
+
 #include <winsock2.h>
 #include <ws2tcpip.h>
+
+#if defined(NINTTP_INTERNAL_UNDEFINE_NOMINMAX)
+    #undef NINTTP_INTERNAL_UNDEFINE_NOMINMAX
+    #undef NOMINMAX
+#endif
 
 #include <cassert>
 #include <concepts>

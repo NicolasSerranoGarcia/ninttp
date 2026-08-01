@@ -26,14 +26,14 @@ namespace
 #endif
                 }
 
-                const auto count = std::min(buffer.size(), input_.size());
+                const auto count = (std::min)(buffer.size(), input_.size());
                 std::copy_n(input_.data(), count, buffer.data());
                 input_.erase(0, count);
                 return count;
             }
 
             std::expected<std::size_t, ninttp::SocketError> send(std::span<const char> bytes){
-                const auto count = std::min(bytes.size(), MaxWriteSize);
+                const auto count = (std::min)(bytes.size(), MaxWriteSize);
                 output_.append(bytes.data(), count);
                 return count;
             }
