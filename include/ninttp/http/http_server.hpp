@@ -130,7 +130,7 @@ namespace ninttp
                             continue;
                         }
 
-                        Response response;
+                        Response response{ver, 200};
                         try{
                             result->get()(*request, response);
                         } catch(const std::exception& error){
@@ -145,8 +145,6 @@ namespace ninttp
                             continue;
                         }
 
-                        response.setVersion(ver);
-                        response.setStatusCode(200);
                         if(response.getBodyFraming() == ResponseBodyFraming::None)
                             response.clearContent();
 

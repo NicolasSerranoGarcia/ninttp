@@ -34,6 +34,10 @@ add_executable(ninttp_http_connection_tests
     http_connection_tests.cpp
 )
 
+add_executable(ninttp_http_response_serialization_tests
+    http_response_serialization_tests.cpp
+)
+
 add_executable(ninttp_http_client_tests
     http_client_tests.cpp
 )
@@ -83,6 +87,11 @@ target_link_libraries(ninttp_http_connection_tests
         ninttp::ninttp
 )
 
+target_link_libraries(ninttp_http_response_serialization_tests
+    PRIVATE
+        ninttp::ninttp
+)
+
 target_link_libraries(ninttp_http_client_tests
     PRIVATE
         ninttp::ninttp
@@ -92,7 +101,7 @@ target_compile_definitions(ninttp_http_limits_tests
     PRIVATE
         MaxMethodLength=17
         MaxBodyLength=8
-        MaxHeaderCount=1
+        MaxHeaderCount=2
 )
 
 add_test(
@@ -138,6 +147,11 @@ add_test(
 add_test(
     NAME ninttp.http.connection
     COMMAND ninttp_http_connection_tests
+)
+
+add_test(
+    NAME ninttp.http.response_serialization
+    COMMAND ninttp_http_response_serialization_tests
 )
 
 add_test(

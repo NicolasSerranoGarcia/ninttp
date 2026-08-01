@@ -115,6 +115,7 @@ namespace ninttp::internal
 
                 auto request = std::move(completedRequest_);
                 completedRequest_.reset();
+                activeRequestMethod_ = request->getMethod();
                 phase_ = ConnectionExchangePhase::AwaitingResponse;
                 return request;
             }
@@ -229,7 +230,7 @@ namespace ninttp::internal
                     response.setHeader("Connection", "keep-alive");
                 }
 
-                outputBuf_.append(response.toString());
+                outputBuf_.append(response.toString(activeRequestMethod_));
                 responseFinished_ = true;
                 phaseStartedAt_ = Clock::now();
                 lastActivityAt_ = phaseStartedAt_;
@@ -475,6 +476,7 @@ namespace ninttp::internal
 
             std::expected<void, NinError> completeResponseExchange(){
                 responseFinished_ = false;
+                activeRequestMethod_.clear();
                 phase_ = ConnectionExchangePhase::ReadingRequest;
                 phaseStartedAt_ = Clock::now();
                 lastActivityAt_ = phaseStartedAt_;
@@ -494,6 +496,7 @@ namespace ninttp::internal
             httpRequestParser<ver> parser_;
 
             std::optional<Request> completedRequest_;
+            std::string activeRequestMethod_;
             std::string pendingInput_;
 
             std::string outputBuf_;

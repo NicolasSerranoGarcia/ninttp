@@ -20,9 +20,7 @@
 namespace ninttp::internal
 {
 
-    //uses builder pattern to craft a Request object that can be retrieved when a message is completed
-    //TODO: add extra state variable to allow retrieving the leftover bytes and the request without reseting the object.
-    //this way we can reuse the object and expand its lifetime 
+    // Uses a builder pattern to craft a Request that can be retrieved with any leftover bytes.
     template<httpVersion ver = http_1_0>
     class httpRequestParser{
         static_assert(isSupportedHTTP1Version(ver),
@@ -139,10 +137,6 @@ namespace ninttp::internal
 
 
                                     if(targetVersionSP == std::string::npos){
-                                        //TODO: additionally maybe validate that target exists when constructing gradually?
-                                        //here we would check existence of constructed against the stored resources, leaving early once 
-                                        //we find a non registerd or other resource
-
                                         return httpParseStatus::NeedData;
                                     }
 
@@ -244,7 +238,9 @@ namespace ninttp::internal
                                     const auto pendingLength = constructed.size() - lastProcessedIdx;
                                     if(pendingLength > limits::MaxHeaderLineLength ||
                                         headerSectionLength + pendingLength > limits::MaxHeaderSectionLength)
-                                        return lengthLimitError("Header section exceeds configured limits");
+                                        return lengthLimitError(
+                                            httpParseErrorType::HeaderFieldsTooLarge,
+                                            "Header section exceeds configured limits");
 
                                     return httpParseStatus::NeedData;
                                 }
@@ -254,7 +250,9 @@ namespace ninttp::internal
 
                                 if(headerLineLength > limits::MaxHeaderLineLength ||
                                     headerSectionLength > limits::MaxHeaderSectionLength)
-                                    return lengthLimitError("Header section exceeds configured limits");
+                                    return lengthLimitError(
+                                        httpParseErrorType::HeaderFieldsTooLarge,
+                                        "Header section exceeds configured limits");
 
                                 //there are no remaining headers
                                 if(lastProcessedIdx == currentHeaderEnd){
@@ -263,7 +261,9 @@ namespace ninttp::internal
                                 }
 
                                 if(++headerCount > limits::MaxHeaderCount)
-                                    return lengthLimitError("Header count exceeds configured maximum");
+                                    return lengthLimitError(
+                                        httpParseErrorType::HeaderFieldsTooLarge,
+                                        "Header count exceeds configured maximum");
 
                                 auto header = getHeader(currentHeaderEnd);
 
@@ -298,7 +298,9 @@ namespace ninttp::internal
                                                                                 .what = "Content-Length field exceeds allowed range"}};
 
                                     if(bodySize > limits::MaxBodyLength)
-                                        return lengthLimitError("Content-Length exceeds configured maximum body length");
+                                        return lengthLimitError(
+                                            httpParseErrorType::BodyTooLarge,
+                                            "Content-Length exceeds configured maximum body length");
 
                                     if(request.headers.contains(parsedHeader.name)){
                                         if(request.headers[parsedHeader.name] != parsedHeader.value)
@@ -410,13 +412,17 @@ namespace ninttp::internal
                                         std::string_view::size_type crlf;
                                         if(crlf = arrived.find("\r\n"); crlf == std::string_view::npos){
                                             if(arrived.size() > limits::MaxChunkLineLength)
-                                                return lengthLimitError("Chunk-size line exceeds configured maximum length");
+                                                return lengthLimitError(
+                                                    httpParseErrorType::InvalidLength,
+                                                    "Chunk-size line exceeds configured maximum length");
 
                                             return httpParseStatus::NeedData;
                                         }
 
                                         if(crlf > limits::MaxChunkLineLength)
-                                            return lengthLimitError("Chunk-size line exceeds configured maximum length");
+                                            return lengthLimitError(
+                                                httpParseErrorType::InvalidLength,
+                                                "Chunk-size line exceeds configured maximum length");
 
                                         auto chunkLine = arrived.substr(0, crlf);
 
@@ -441,10 +447,14 @@ namespace ninttp::internal
                                             return std::unexpected{std::move(parsedExtensions).error()};
 
                                         if(chunkedEncodingLastLength > limits::MaxChunkLength)
-                                            return lengthLimitError("Chunk length exceeds configured maximum");
+                                            return lengthLimitError(
+                                                httpParseErrorType::BodyTooLarge,
+                                                "Chunk length exceeds configured maximum");
 
                                         if(chunkedEncodingLastLength > limits::MaxBodyLength - request.body->size())
-                                            return lengthLimitError("Decoded body exceeds configured maximum length");
+                                            return lengthLimitError(
+                                                httpParseErrorType::BodyTooLarge,
+                                                "Decoded body exceeds configured maximum length");
 
                                         chunkedEncodingRemainingBytesForConsume = chunkedEncodingLastLength;
 
@@ -502,7 +512,9 @@ namespace ninttp::internal
                                     const auto pendingLength = constructed.size() - lastProcessedIdx;
                                     if(pendingLength > limits::MaxTrailerLineLength ||
                                         trailerSectionLength + pendingLength > limits::MaxTrailerSectionLength)
-                                        return lengthLimitError("Trailer section exceeds configured limits");
+                                        return lengthLimitError(
+                                            httpParseErrorType::InvalidLength,
+                                            "Trailer section exceeds configured limits");
 
                                     return httpParseStatus::NeedData;
                                 }
@@ -512,7 +524,9 @@ namespace ninttp::internal
 
                                 if(trailerLineLength > limits::MaxTrailerLineLength ||
                                     trailerSectionLength > limits::MaxTrailerSectionLength)
-                                    return lengthLimitError("Trailer section exceeds configured limits");
+                                    return lengthLimitError(
+                                        httpParseErrorType::InvalidLength,
+                                        "Trailer section exceeds configured limits");
 
                                 if(lastProcessedIdx == currentHeaderEnd){
                                     lastProcessedIdx += 2;
@@ -522,7 +536,9 @@ namespace ninttp::internal
                                 }
 
                                 if(++trailerCount > limits::MaxTrailerCount)
-                                    return lengthLimitError("Trailer field count exceeds configured maximum");
+                                    return lengthLimitError(
+                                        httpParseErrorType::InvalidLength,
+                                        "Trailer field count exceeds configured maximum");
 
                                 auto header = getHeader(currentHeaderEnd);
 
@@ -760,7 +776,11 @@ namespace ninttp::internal
                                         .what = "Header name cannot be empty"}};
 
                 if(name.size() > limits::MaxHeaderNameLength)
-                    return lengthLimitError("Header field name exceeds configured maximum length");
+                    return lengthLimitError(
+                        state == Processing::Headers
+                            ? httpParseErrorType::HeaderFieldsTooLarge
+                            : httpParseErrorType::InvalidLength,
+                        "Header field name exceeds configured maximum length");
 
                 for(const char c : name){
                     if(!utils::isTChar(c))
@@ -780,7 +800,11 @@ namespace ninttp::internal
                     --valueEnd;
 
                 if(valueEnd - valueStart > limits::MaxHeaderValueLength)
-                    return lengthLimitError("Header field value exceeds configured maximum length");
+                    return lengthLimitError(
+                        state == Processing::Headers
+                            ? httpParseErrorType::HeaderFieldsTooLarge
+                            : httpParseErrorType::InvalidLength,
+                        "Header field value exceeds configured maximum length");
 
                 for(auto idx = valueStart; idx < valueEnd; ++idx){
                     const auto byte = static_cast<unsigned char>(headers[idx]);
@@ -800,8 +824,11 @@ namespace ninttp::internal
                 return header;
             }
 
-            std::unexpected<httpParseError> lengthLimitError(std::string message) const{
-                return std::unexpected{httpParseError{ .type = httpParseErrorType::InvalidLength,
+            std::unexpected<httpParseError> lengthLimitError(
+                httpParseErrorType type,
+                std::string message) const
+            {
+                return std::unexpected{httpParseError{ .type = type,
                                                         .parseContextText = contextFrom(lastProcessedIdx),
                                                         .what = std::move(message)}};
             }
@@ -834,7 +861,6 @@ namespace ninttp::internal
             std::string::size_type lastProcessedIdx = std::string::npos;
             //synced with the constructed string as new info gets received
 
-            //TODO: assert this has a move constructor that leaves the object in it's original state, or at least a clear method
             Request request;
             std::size_t bodySize = 0;
             std::size_t remaining;

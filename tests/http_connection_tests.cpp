@@ -157,6 +157,22 @@ int main(){
     }
 
     {
+        Connection connection{
+            FakeStream{"HEAD / HTTP/1.1\r\nHost: example.test\r\n\r\n"}};
+        assert(connection.onReadable().has_value());
+        assert(connection.takeRequest().has_value());
+
+        ninttp::Response response{ninttp::http_1_1, 200};
+        assert(response.setContent("headers only"));
+        assert(connection.queueResponse(response));
+        assert(connection.onWritable().has_value());
+
+        const auto& output = connection.stream().output();
+        assert(output.find("Content-Length: 12\r\n") != std::string::npos);
+        assert(output.find("\r\n\r\nheaders only") == std::string::npos);
+    }
+
+    {
         FakeStream stream{
             "GET / HTTP/1.1\r\n"
             "Host: example.test\r\n"

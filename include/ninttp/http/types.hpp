@@ -164,6 +164,30 @@ namespace ninttp
     }
 
     using StatusCode = std::uint16_t;
+
+    [[nodiscard]] constexpr bool responseStatusForbidsContent(StatusCode status) noexcept{
+        return (status >= 100 && status < 200) ||
+            status == 204 || status == 205 || status == 304;
+    }
+
+    [[nodiscard]] constexpr bool responseForbidsContent(
+        std::string_view requestMethod,
+        StatusCode status) noexcept
+    {
+        return requestMethod == "HEAD" ||
+            responseStatusForbidsContent(status) ||
+            (requestMethod == "CONNECT" && status >= 200 && status < 300);
+    }
+
+    [[nodiscard]] constexpr bool responseForbidsFramingFields(
+        std::string_view requestMethod,
+        StatusCode status) noexcept
+    {
+        return (status >= 100 && status < 200) ||
+            status == 204 || status == 205 ||
+            (requestMethod == "CONNECT" && status >= 200 && status < 300);
+    }
+
     [[nodiscard]] constexpr std::string_view getReadableStatus(StatusCode code) noexcept{
         switch(code){
             case 100: return "Continue";
@@ -435,6 +459,10 @@ namespace ninttp
             }
 
             [[nodiscard]] std::string toString() const{
+                return toString({});
+            }
+
+            [[nodiscard]] std::string toString(std::string_view requestMethod) const{
                 assert(isSupportedHTTP1Version(version));
                 assert(hasConsistentBodyFraming());
                 std::string responseStr;
@@ -446,7 +474,14 @@ namespace ninttp
                 responseStr += getReadableStatus(statusCode);
                 responseStr += "\r\n";
 
+                const bool omitFramingFields =
+                    responseForbidsFramingFields(requestMethod, statusCode);
                 for(const auto& header : headers){
+                    if(omitFramingFields &&
+                        (header.nameEquals("content-length") ||
+                            header.nameEquals("transfer-encoding")))
+                        continue;
+
                     responseStr += header.name;
                     responseStr += ": ";
                     responseStr += header.value;
@@ -454,6 +489,9 @@ namespace ninttp
                 }
 
                 responseStr += "\r\n";
+
+                if(responseForbidsContent(requestMethod, statusCode))
+                    return responseStr;
 
                 const auto bodyLength = body.has_value() ? body->size() : 0;
 

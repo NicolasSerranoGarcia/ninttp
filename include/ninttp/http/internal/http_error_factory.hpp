@@ -31,6 +31,12 @@ namespace ninttp::internal{
                     case httpParseErrorType::TargetTooLong:
                         return 414;
 
+                    case httpParseErrorType::BodyTooLarge:
+                        return 413;
+
+                    case httpParseErrorType::HeaderFieldsTooLarge:
+                        return 431;
+
                     default:
                         return 400;
                 }

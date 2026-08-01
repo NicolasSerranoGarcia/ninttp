@@ -9,8 +9,6 @@ namespace ninttp::internal
         Done
     };
 
-    //TODO: map to its http errors
-    //Most parse errors will map to 400 bad Request probably
     enum class httpParseErrorType{
         UnrecognizedToken,
         ExpectedMissingToken,
@@ -22,6 +20,8 @@ namespace ninttp::internal
         MethodTooLong,
         VersionTooLong,
         InvalidLength,
+        BodyTooLarge,
+        HeaderFieldsTooLarge,
         DuplicatedHeader,
         IncompatibleHeaders, //400 Bad Request,
         MissingHostHeader,
