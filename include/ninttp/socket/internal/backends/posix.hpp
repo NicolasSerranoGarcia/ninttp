@@ -14,6 +14,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -27,8 +28,11 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <memory>
 
 #include "../../../endpoints.hpp"
+#include "../../../dns/resolved_addresses.hpp"
 #include "../../traits.hpp"
 #include "../../utils.hpp"
 #include "concepts.hpp"
@@ -116,6 +120,47 @@ namespace ninttp::internal
             using AddressStorageT = sockaddr_storage;
             using AddressLenT = socklen_t;
             using CloseStatusT = SocketCloseStatus<ErrorT>;
+
+            /**
+             * @brief Blocking system lookup returning all IPv4 and IPv6 addresses.
+             * Errors are getaddrinfo codes, not socket errno values. Empty names
+             * and embedded NULs return EAI_NONAME. Port is supplied by the caller.
+             */
+            static std::expected<ninttp::ResolvedAddresses, ErrorT> resolve(
+                std::string_view hostname, std::uint16_t port = 0)
+            {
+                if (hostname.empty() || hostname.find('\0') != std::string_view::npos)
+                    return std::unexpected{EAI_NONAME};
+                const std::string name{hostname};
+                addrinfo hints{};
+                hints.ai_family = AF_UNSPEC;
+                hints.ai_socktype = SOCK_STREAM;
+                addrinfo* raw = nullptr;
+                const int error = ::getaddrinfo(name.c_str(), nullptr, &hints, &raw);
+                if (error != 0)
+                    return std::unexpected{error};
+                const std::unique_ptr<addrinfo, decltype(&::freeaddrinfo)> result{raw, &::freeaddrinfo};
+                ninttp::ResolvedAddresses addresses;
+                for (auto* entry = raw; entry; entry = entry->ai_next) {
+                    if (!entry->ai_addr)
+                        continue;
+                    if (entry->ai_family == AF_INET && entry->ai_addrlen >= sizeof(sockaddr_in)) {
+                        sockaddr_in address{};
+                        std::memcpy(&address, entry->ai_addr, sizeof(address));
+                        addresses.ipv4.emplace_back(
+                            ninttp::utils::networkToHost32(address.sin_addr.s_addr), port);
+                    } else if (entry->ai_family == AF_INET6 && entry->ai_addrlen >= sizeof(sockaddr_in6)) {
+                        sockaddr_in6 address{};
+                        std::memcpy(&address, entry->ai_addr, sizeof(address));
+                        ninttp::IPv6Endpoint::AddressBytes bytes{};
+                        std::memcpy(bytes.data(), &address.sin6_addr, bytes.size());
+                        addresses.ipv6.emplace_back(bytes, port);
+                    }
+                }
+                if (addresses.ipv4.empty() && addresses.ipv6.empty())
+                    return std::unexpected{EAI_NONAME};
+                return addresses;
+            }
 
             struct AddressBundleT{
                 SocketT socket;

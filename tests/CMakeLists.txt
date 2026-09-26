@@ -158,3 +158,7 @@ add_test(
     NAME ninttp.http.client
     COMMAND ninttp_http_client_tests
 )
+
+add_executable(ninttp_dns_tests dns_tests.cpp)
+target_link_libraries(ninttp_dns_tests PRIVATE ninttp::ninttp)
+add_test(NAME ninttp_dns_tests COMMAND ninttp_dns_tests)
